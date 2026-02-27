@@ -1,0 +1,28 @@
+# 🔗 GitHub Setup Commands
+
+## 📁 Navigate to project directory
+cd d:\sara\smart-english-grade-4\src\mobile\react-native
+
+## 🚀 Initialize Git and push to GitHub
+
+# Initialize Git repository
+git init
+
+# Add all files
+git add .
+
+# First commit
+git commit -m "Initial commit - AI English Master React Native App"
+
+# Add remote repository
+git remote add origin https://github.com/YOUR_USERNAME/ai-english-master.git
+
+# Push to GitHub
+git push -u origin main
+
+## 📝 Replace YOUR_USERNAME with your actual GitHub username
+
+## 🔄 For subsequent changes:
+git add .
+git commit -m "Your commit message"
+git push

@@ -1,0 +1,51 @@
+AI ENGLISH MASTER - PROMPTS LIBRARY
+
+=== LEVEL ASSESSMENT PROMPTS ===
+Prompt 1: "Ask: What's your name and why do you want to learn English?"
+Prompt 2: "Ask: How would you introduce yourself in English?"
+Prompt 3: "Ask: What's your current English level (beginner/intermediate/advanced)?"
+Prompt 4: "Ask: What's your main goal (travel/study/business/conversation)?"
+Prompt 5: "Ask: How much time can you dedicate daily?"
+
+=== LESSON GENERATION PROMPTS ===
+Vocabulary Lesson: "Create a 15-minute vocabulary lesson about {topic} for {level} level. Include 10 new words, definitions, and example sentences."
+
+Grammar Lesson: "Explain {grammar_topic} for {level} level in simple terms. Provide 5 examples and 3 practice exercises."
+
+Conversation Lesson: "Create a realistic dialogue about {scenario} for {level} level. Include cultural notes and common phrases."
+
+Listening Lesson: "Design a listening exercise about {topic} for {level} level. Include audio transcript and comprehension questions."
+
+Reading Lesson: "Create a reading passage about {topic} for {level} level. Include vocabulary list and comprehension questions."
+
+Writing Lesson: "Design a writing task about {topic} for {level} level. Provide template and evaluation criteria."
+
+=== EXERCISE GENERATION PROMPTS ===
+Multiple Choice: "Create 5 multiple choice questions about {topic} for {level} level. Include explanations."
+
+Fill in the Blank: "Create 10 fill-in-the-blank sentences about {grammar_topic} for {level} level."
+
+Matching: "Create matching exercise for {vocabulary_set} with 10 items."
+
+Speaking: "Design speaking practice prompts about {topic} for {level} level."
+
+=== CORRECTION PROMPTS ===
+Grammar Correction: "Correct this sentence: '{user_sentence}'. Explain the error and provide 3 correct alternatives."
+
+Pronunciation: "Analyze pronunciation of '{word}'. Provide phonetic transcription and practice tips."
+
+Writing Feedback: "Evaluate this writing: '{user_text}'. Score grammar, vocabulary, structure, and coherence."
+
+=== MOTIVATION PROMPTS ===
+Encouragement: "User completed {lesson}. Provide positive feedback and next steps."
+
+Streak Reminder: "User has {streak_days} day streak. Send encouraging message."
+
+Level Up: "User reached {new_level}. Celebrate achievement and explain benefits."
+
+=== PERSONALIZATION PROMPTS ===
+Adaptive Content: "User scored {score}% on {topic}. Adjust difficulty to {new_level}."
+
+Weakness Analysis: "User struggles with {weak_areas}. Create targeted practice exercises."
+
+Learning Style: "User prefers {learning_style}. Adapt content to be more {style_description}."

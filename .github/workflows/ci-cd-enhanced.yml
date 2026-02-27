@@ -1,0 +1,390 @@
+# CI/CD Pipeline for Smart English Grade 4
+name: Smart English Grade 4 CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Testing
+  quality-check:
+    runs-on: ubuntu-latest
+    name: Code Quality & Testing
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Type check
+      run: npm run type-check
+      
+    - name: Lint code
+      run: npm run lint
+      
+    - name: Run tests
+      run: npm run test:coverage
+      
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+        
+    - name: Security audit
+      run: npm audit --audit-level moderate
+      
+    - name: Build application
+      run: npm run build
+      
+    - name: Analyze bundle size
+      run: npm run build:analyze
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+        retention-days: 7
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scanning
+    needs: quality-check
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        languages: javascript
+
+  # Docker Build and Push
+  docker-build:
+    runs-on: ubuntu-latest
+    name: Docker Build & Push
+    needs: [quality-check, security-scan]
+    if: github.event_name != 'pull_request'
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        outputs:
+          digest: ${{ steps.build.outputs.digest }}
+          
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: spdx-json
+        output-file: sbom.spdx.json
+        
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom
+        path: sbom.spdx.json
+
+  # Deploy to Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: docker-build
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        echo "Image: ${{ needs.docker-build.outputs.image-tag }}"
+        echo "Digest: ${{ needs.docker-build.outputs.image-digest }}"
+        
+        # Add your staging deployment commands here
+        # For example, using kubectl, Helm, or Docker Compose
+        # kubectl set image deployment/staging-app app=${{ needs.docker-build.outputs.image-tag }}
+        # kubectl apply -f k8s/staging/
+        
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Add your smoke test commands here
+        # curl -f https://staging.smart-english-grade-4.com/health
+        
+    - name: Notify team
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        message: |
+          🚀 Staging Deployment
+          Status: ${{ job.status }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref }}
+          Image: ${{ needs.docker-build.outputs.image-tag }}
+
+  # Deploy to Production
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: docker-build
+    if: github.event_name == 'release'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        echo "Image: ${{ needs.docker-build.outputs.image-tag }}"
+        echo "Digest: ${{ needs.docker-build.outputs.image-digest }}"
+        
+        # Add your production deployment commands here
+        # For example, using kubectl, Helm, or Docker Compose
+        # kubectl set image deployment/prod-app app=${{ needs.docker-build.outputs.image-tag }}
+        # kubectl apply -f k8s/production/
+        
+    - name: Run health checks
+      run: |
+        echo "Running health checks on production..."
+        # Add your health check commands here
+        # curl -f https://smart-english-grade-4.com/health
+        
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on production..."
+        # Add your smoke test commands here
+        # curl -f https://smart-english-grade-4.com/api/health
+        
+    - name: Update deployment status
+      run: |
+        echo "Updating deployment status..."
+        # Add your deployment status update commands here
+        
+    - name: Notify team
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        message: |
+          🎉 Production Deployment
+          Status: ${{ job.status }}
+          Version: ${{ github.event.release.tag_name }}
+          Commit: ${{ github.sha }}
+          Image: ${{ needs.docker-build.outputs.image-tag }}
+
+  # Performance Testing
+  performance-test:
+    runs-on: ubuntu-latest
+    name: Performance Testing
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Lighthouse CI
+      uses: treosh/lighthouse-ci-action@v10
+      with:
+        urls: |
+          https://staging.smart-english-grade-4.com
+          https://staging.smart-english-grade-4.com/lessons
+          https://staging.smart-english-grade-4.com/practice
+        configPath: './lighthouserci.json'
+        uploadArtifacts: true
+        temporaryPublicStorage: true
+        
+    - name: Run Web Vitals
+      run: |
+        echo "Running Web Vitals testing..."
+        # Add your Web Vitals testing commands here
+        
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: .lighthouseci/
+
+  # Database Backup
+  backup-database:
+    runs-on: ubuntu-latest
+    name: Database Backup
+    needs: deploy-production
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create database backup
+      run: |
+        echo "Creating database backup..."
+        # Add your database backup commands here
+        # mysqldump -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} -p${{ secrets.DB_PASSWORD }} smart_english > backup.sql
+        
+    - name: Upload backup to storage
+      run: |
+        echo "Uploading backup to storage..."
+        # Add your backup upload commands here
+        # aws s3 cp backup.sql s3://smart-english-backups/$(date +%Y-%m-%d)/
+        
+    - name: Cleanup old backups
+      run: |
+        echo "Cleaning up old backups..."
+        # Add your cleanup commands here
+        # aws s3 ls s3://smart-english-backups/ | head -n -10 | awk '{print $4}' | xargs -I {} aws s3 rm s3://smart-english-backups/{}
+
+  # Monitoring Setup
+  setup-monitoring:
+    runs-on: ubuntu-latest
+    name: Setup Monitoring
+    needs: deploy-production
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Prometheus
+      run: |
+        echo "Setting up Prometheus monitoring..."
+        # Add your Prometheus setup commands here
+        
+    - name: Setup Grafana
+      run: |
+        echo "Setting up Grafana dashboards..."
+        # Add your Grafana setup commands here
+        
+    - name: Setup Alerting
+      run: |
+        echo "Setting up alerting rules..."
+        # Add your alerting setup commands here
+        
+    - name: Setup Log Aggregation
+      run: |
+        echo "Setting up log aggregation..."
+        # Add your log aggregation setup commands here
+
+  # Rollback Strategy
+  rollback:
+    runs-on: ubuntu-latest
+    name: Rollback Strategy
+    if: failure() && (github.ref == 'refs/heads/main' || github.event_name == 'release')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Get previous image
+      id: previous-image
+      run: |
+        echo "Getting previous image..."
+        # Add your commands to get the previous stable image
+        
+    - name: Rollback deployment
+      run: |
+        echo "Rolling back deployment..."
+        echo "Previous image: ${{ steps.previous-image.outputs.image }}"
+        # Add your rollback commands here
+        # kubectl set image deployment/prod-app app=${{ steps.previous-image.outputs.image }}
+        
+    - name: Verify rollback
+      run: |
+        echo "Verifying rollback..."
+        # Add your verification commands here
+        # curl -f https://smart-english-grade-4.com/health
+        
+    - name: Notify team
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        message: |
+          🔄 Rollback Completed
+          Status: ${{ job.status }}
+          Previous Image: ${{ steps.previous-image.outputs.image }}
+          Commit: ${{ github.sha }}

@@ -1,0 +1,311 @@
+﻿openapi: 3.0.3
+info:
+  title: LISAN MVP API
+  version: 1.1.0
+  description: Auth, Placement, Learning Path, Gamification, Subscriptions, and AI tutor MVP contracts.
+servers:
+  - url: http://localhost:4000/api/v1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string }
+        refreshToken: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string }
+            displayName: { type: string }
+            status: { type: string }
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                displayName: { type: string }
+                country: { type: string, minLength: 2, maxLength: 2 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/login:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New token pair.
+  /auth/logout:
+    post:
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204':
+          description: Logged out
+  /auth/me:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+  /placement/tests/{languageCode}:
+    get:
+      tags: [Placement]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: languageCode
+          required: true
+          schema: { type: string, enum: [en, el] }
+      responses:
+        '200': { description: Placement test payload }
+  /placement/submit:
+    post:
+      tags: [Placement]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [testId, answers]
+              properties:
+                testId: { type: string, format: uuid }
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    required: [questionId, optionId]
+                    properties:
+                      questionId: { type: string, format: uuid }
+                      optionId: { type: string, format: uuid }
+      responses:
+        '201': { description: Placement result }
+  /learning-path:
+    get:
+      tags: [Learning Path]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: languageCode
+          schema: { type: string, enum: [en, el], default: en }
+        - in: query
+          name: goalType
+          schema: { type: string, enum: [daily, travel, work, study, migration], default: daily }
+      responses:
+        '200': { description: Path snapshot }
+  /lessons/{lessonId}/content:
+    get:
+      tags: [Lessons]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: lessonId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lesson body content (dialogue, exercises, vocabulary, model answers)
+        '404':
+          description: Lesson or lesson content not found
+  /gamification/status:
+    get:
+      tags: [Gamification]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: XP and streak snapshot }
+  /gamification/award:
+    post:
+      tags: [Gamification]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, points]
+              properties:
+                source: { type: string }
+                points: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        '201': { description: XP granted }
+        '429': { description: Cooldown active or daily cap reached }
+  /subscriptions/plans:
+    get:
+      tags: [Subscriptions]
+      responses:
+        '200': { description: Available plans }
+  /subscriptions/me:
+    get:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current subscription }
+  /subscriptions/subscribe:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planCode]
+              properties:
+                planCode: { type: string }
+      responses:
+        '201': { description: Subscription created }
+  /ai/tutor/reply:
+    post:
+      tags: [AI]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+                scenario: { type: string, enum: [daily, travel, work, migration] }
+                proficiency: { type: string, enum: [A1, A2, B1, B2, C1, C2], default: A2 }
+      responses:
+        '200':
+          description: Tutor response with safety status.
+        '503':
+          description: AI provider unavailable.
+  /analytics/events:
+    post:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventName]
+              properties:
+                eventName:
+                  type: string
+                  enum:
+                    - ai_tutor_submitted
+                    - ai_tutor_success
+                    - ai_tutor_retry
+                    - ai_tutor_cooldown_hit
+                    - ai_tutor_daily_cap_hit
+                source: { type: string, default: web }
+                metadata: { type: object }
+      responses:
+        '201': { description: Event stored }
+  /analytics/summary:
+    get:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - in: query
+          name: scenario
+          schema: { type: string, enum: [all, daily, travel, work, migration], default: all }
+      responses:
+        '200': { description: Event counts by type for selected time window }
+  /analytics/trend:
+    get:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - in: query
+          name: scenario
+          schema: { type: string, enum: [all, daily, travel, work, migration], default: all }
+      responses:
+        '200': { description: Hourly trend points for analytics events }
+  /analytics/ops/dashboard:
+    get:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+      responses:
+        '200':
+          description: Operational KPIs and hourly trend (latency, errors, retries, circuit state)
+  /analytics/ops/routes:
+    get:
+      tags: [Analytics]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 5, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Route-level SLO snapshot (P95 latency + 5xx by endpoint + top failing routes)

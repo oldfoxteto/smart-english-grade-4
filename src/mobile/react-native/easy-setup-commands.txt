@@ -1,0 +1,27 @@
+# 🚀 EASY SETUP - Copy and paste these commands one by one
+
+# Step 1: Navigate to project directory
+cd d:\sara\smart-english-grade-4\src\mobile\react-native
+
+# Step 2: Initialize Git
+git init
+
+# Step 3: Add all files
+git add .
+
+# Step 4: First commit
+git commit -m "Initial commit - AI English Master React Native App"
+
+# Step 5: Add remote (REPLACE YOUR_USERNAME)
+git remote add origin https://github.com/YOUR_USERNAME/ai-english-master.git
+
+# Step 6: Push to GitHub
+git push -u origin main
+
+# 🎯 AFTER THIS: Go to Firebase Studio
+# 1. Open: https://studio.firebase.google.com/import
+# 2. Click "Import project"
+# 3. Choose "Import from GitHub"
+# 4. Select: ai-english-master
+# 5. Click "Import"
+# 6. Wait for deployment

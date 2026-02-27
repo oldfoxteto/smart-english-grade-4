@@ -1,0 +1,189 @@
+# 🚀 Quick Firebase Setup Commands for Cloud Shell
+# Copy and paste these commands one by one in Cloud Shell
+
+# Step 1: Login and create project
+firebase login
+firebase projects:create ai-english-master
+firebase use ai-english-master
+
+# Step 2: Create project directory
+mkdir ai-english-firebase && cd ai-english-firebase
+
+# Step 3: Initialize Firebase
+firebase init
+# (Select: Firestore, Functions, Hosting, Storage)
+# (Select: Use existing project)
+# (Select: ai-english-master)
+# (Accept defaults for other options)
+
+# Step 4: Create Firestore rules
+cat > firestore.rules << 'EOF'
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /progress/{userId}/{documentId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /lessons/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /achievements/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /userProgress/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+EOF
+
+# Step 5: Create Storage rules
+cat > storage.rules << 'EOF'
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /avatars/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /lessons/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /speech/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /user-files/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+EOF
+
+# Step 6: Create service account
+gcloud iam service-accounts create firebase-admin --display-name="Firebase Admin"
+
+# Step 7: Grant permissions
+gcloud projects add-iam-policy-binding ai-english-master \
+  --member="serviceAccount:firebase-admin@ai-english-master.iam.gserviceaccount.com" \
+  --role="roles/editor"
+
+# Step 8: Generate service account key
+gcloud iam service-accounts keys create service-account-key.json \
+  --iam-account=firebase-admin@ai-english-master.iam.gserviceaccount.com"
+
+# Step 9: Setup Node.js project
+npm init -y
+npm install firebase-admin
+
+# Step 10: Create data setup script
+cat > setup-data.js << 'EOF'
+const admin = require('firebase-admin');
+const serviceAccount = require('./service-account-key.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  projectId: 'ai-english-master'
+});
+
+const db = admin.firestore();
+
+const lessons = [
+  {
+    title: "At the Airport",
+    type: "vocabulary",
+    level: "A1",
+    duration: 15,
+    xp: 50,
+    track: "travel",
+    difficulty: "beginner",
+    content: "Learn essential airport vocabulary for check-in, security, boarding, and luggage handling.",
+    isLocked: false,
+    prerequisites: []
+  },
+  {
+    title: "Hotel Check-in",
+    type: "conversation",
+    level: "A1",
+    duration: 20,
+    xp: 75,
+    track: "travel",
+    difficulty: "beginner",
+    content: "Practice checking into hotels with real-world dialogues and phrases.",
+    isLocked: false,
+    prerequisites: []
+  },
+  {
+    title: "Ordering Food",
+    type: "conversation",
+    level: "A1",
+    duration: 15,
+    xp: 60,
+    track: "travel",
+    difficulty: "beginner",
+    content: "Learn how to order food in restaurants with common phrases and vocabulary.",
+    isLocked: false,
+    prerequisites: []
+  }
+];
+
+const achievements = [
+  {
+    name: "First Lesson",
+    description: "Complete your first lesson",
+    xp: 50,
+    reward: "Unlock next level",
+    icon: "🎓",
+    category: "milestone",
+    isUnlocked: false
+  },
+  {
+    name: "Week Streak",
+    description: "Study for 7 consecutive days",
+    xp: 100,
+    reward: "Special badge",
+    icon: "🔥",
+    category: "streak",
+    isUnlocked: false
+  }
+];
+
+async function setup() {
+  try {
+    console.log('Adding lessons...');
+    for (const lesson of lessons) {
+      await db.collection('lessons').add(lesson);
+      console.log('✅ Added lesson:', lesson.title);
+    }
+    
+    console.log('Adding achievements...');
+    for (const achievement of achievements) {
+      await db.collection('achievements').add(achievement);
+      console.log('✅ Added achievement:', achievement.name);
+    }
+    
+    console.log('🎉 Firebase data setup complete!');
+  } catch (error) {
+    console.error('❌ Error:', error);
+  }
+}
+
+setup();
+EOF
+
+# Step 11: Run data setup
+node setup-data.js
+
+# Step 12: Deploy rules
+firebase deploy --only firestore:rules
+firebase deploy --only storage
+
+# Step 13: Get project info
+firebase projects:list
+echo "🎉 Firebase setup complete!"
+echo "📋 Project ID: ai-english-master"
+echo "🌐 Console: https://console.firebase.google.com/project/ai-english-master"

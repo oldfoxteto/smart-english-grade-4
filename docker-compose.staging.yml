@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16
+    container_name: lisan-db-staging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lisan_staging
+    ports:
+      - "5434:5432"
+    volumes:
+      - lisan_db_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lisan_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/lisan-backend:${BACKEND_IMAGE_TAG:-staging}
+    container_name: lisan-backend-staging
+    env_file:
+      - backend/.env.staging
+    environment:
+      NODE_ENV: staging
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/lisan_staging
+    ports:
+      - "4100:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  lisan_db_staging_data:

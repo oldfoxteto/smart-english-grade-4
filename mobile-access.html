@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mobile Access QR</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        #qrcode { margin: 20px auto; }
+        .url { font-size: 18px; color: #0B4B88; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>📱 امسح QR Code للوصول من الموبايل</h1>
+    <div id="qrcode"></div>
+    <div class="url">http://192.168.1.8:5173/</div>
+    <p>افتح كاميرا هاتفك وامسح الكود</p>
+    
+    <script>
+        new QRCode(document.getElementById("qrcode"), {
+            text: "http://192.168.1.8:5173/",
+            width: 256,
+            height: 256
+        });
+    </script>
+</body>
+</html>

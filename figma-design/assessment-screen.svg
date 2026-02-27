@@ -1,0 +1,92 @@
+<svg width="375" height="812" viewBox="0 0 375 812" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#F8FAF5"/>
+  
+  <!-- Status Bar -->
+  <rect width="375" height="44" fill="#4CAF50"/>
+  <text x="187" y="30" text-anchor="middle" fill="white" font-family="Inter" font-size="14" font-weight="600">9:41 AM</text>
+  
+  <!-- Header -->
+  <g transform="translate(0, 60)">
+    <!-- Back Button -->
+    <circle cx="32" cy="32" r="20" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="32" y="38" text-anchor="middle" fill="#424242" font-family="Inter" font-size="20">←</text>
+    
+    <!-- Title -->
+    <text x="187" y="38" text-anchor="middle" fill="#1B5E20" font-family="Inter" font-size="20" font-weight="700">Level Assessment</text>
+    
+    <!-- Progress -->
+    <text x="343" y="38" text-anchor="end" fill="#4CAF50" font-family="Inter" font-size="14" font-weight="600">1/5</text>
+  </g>
+  
+  <!-- Progress Bar -->
+  <g transform="translate(32, 120)">
+    <rect x="0" y="0" width="311" height="8" rx="4" fill="#E0E0E0"/>
+    <rect x="0" y="0" width="62" height="8" rx="4" fill="#4CAF50"/>
+  </g>
+  
+  <!-- Question Card -->
+  <g transform="translate(32, 160)">
+    <rect x="0" y="0" width="311" height="280" rx="16" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <!-- Question Number -->
+    <rect x="0" y="0" width="80" height="32" rx="16" fill="#4CAF50"/>
+    <text x="40" y="22" text-anchor="middle" fill="white" font-family="Inter" font-size="12" font-weight="600">Question 1</text>
+    
+    <!-- Question Text -->
+    <text x="20" y="70" fill="#1B5E20" font-family="Inter" font-size="18" font-weight="600">What's your name?</text>
+    <text x="20" y="95" fill="#757575" font-family="Inter" font-size="14">Tell us how to address you</text>
+    
+    <!-- Input Field -->
+    <rect x="20" y="120" width="271" height="48" rx="8" fill="#F5F5F5" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="30" y="148" fill="#9E9E9E" font-family="Inter" font-size="16">Enter your name...</text>
+    
+    <!-- Help Text -->
+    <text x="20" y="200" fill="#757575" font-family="Inter" font-size="12">This helps us personalize your learning experience</text>
+    
+    <!-- Next Button -->
+    <rect x="20" y="220" width="271" height="48" rx="8" fill="#4CAF50"/>
+    <text x="155" y="248" text-anchor="middle" fill="white" font-family="Inter" font-size="16" font-weight="600">Next Question</text>
+  </g>
+  
+  <!-- Question Preview -->
+  <g transform="translate(32, 460)">
+    <text x="0" y="0" fill="#424242" font-family="Inter" font-size="14" font-weight="600">Upcoming Questions:</text>
+    
+    <!-- Preview Items -->
+    <g transform="translate(0, 20)">
+      <rect x="0" y="0" width="311" height="40" rx="8" fill="#F8FAF5"/>
+      <circle cx="20" cy="20" r="12" fill="#E0E0E0"/>
+      <text x="20" y="25" text-anchor="middle" fill="#757575" font-family="Inter" font-size="10" font-weight="600">2</text>
+      <text x="40" y="25" fill="#757575" font-family="Inter" font-size="12">Current English level</text>
+    </g>
+    
+    <g transform="translate(0, 70)">
+      <rect x="0" y="0" width="311" height="40" rx="8" fill="#F8FAF5"/>
+      <circle cx="20" cy="20" r="12" fill="#E0E0E0"/>
+      <text x="20" y="25" text-anchor="middle" fill="#757575" font-family="Inter" font-size="10" font-weight="600">3</text>
+      <text x="40" y="25" fill="#757575" font-family="Inter" font-size="12">Learning goal</text>
+    </g>
+    
+    <g transform="translate(0, 120)">
+      <rect x="0" y="0" width="311" height="40" rx="8" fill="#F8FAF5"/>
+      <circle cx="20" cy="20" r="12" fill="#E0E0E0"/>
+      <text x="20" y="25" text-anchor="middle" fill="#757575" font-family="Inter" font-size="10" font-weight="600">4</text>
+      <text x="40" y="25" fill="#757575" font-family="Inter" font-size="12">Daily time commitment</text>
+    </g>
+    
+    <g transform="translate(0, 170)">
+      <rect x="0" y="0" width="311" height="40" rx="8" fill="#F8FAF5"/>
+      <circle cx="20" cy="20" r="12" fill="#E0E0E0"/>
+      <text x="20" y="25" text-anchor="middle" fill="#757575" font-family="Inter" font-size="10" font-weight="600">5</text>
+      <text x="40" y="25" fill="#757575" font-family="Inter" font-size="12">Why learn English?</text>
+    </g>
+  </g>
+  
+  <!-- Bottom Navigation Hint -->
+  <g transform="translate(0, 740)">
+    <rect width="375" height="72" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="187" y="30" text-anchor="middle" fill="#757575" font-family="Inter" font-size="12">Assessment takes ~2 minutes</text>
+    <text x="187" y="50" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="12" font-weight="600">Your answers help us create the perfect learning plan</text>
+  </g>
+</svg>

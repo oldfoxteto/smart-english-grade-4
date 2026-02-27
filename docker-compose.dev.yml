@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: lisan-db-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lisan_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - lisan_db_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lisan_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: lisan-backend-dev
+    env_file:
+      - backend/.env.dev
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/lisan_dev
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npm run dev"
+
+volumes:
+  lisan_db_dev_data:

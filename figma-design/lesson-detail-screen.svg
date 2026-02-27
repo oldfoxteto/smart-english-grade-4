@@ -1,0 +1,126 @@
+<svg width="375" height="812" viewBox="0 0 375 812" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#F8FAF5"/>
+  
+  <!-- Status Bar -->
+  <rect width="375" height="44" fill="#4CAF50"/>
+  <text x="187" y="30" text-anchor="middle" fill="white" font-family="Inter" font-size="14" font-weight="600">9:41 AM</text>
+  
+  <!-- Header -->
+  <g transform="translate(0, 60)">
+    <!-- Back Button -->
+    <circle cx="32" cy="32" r="20" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="32" y="38" text-anchor="middle" fill="#424242" font-family="Inter" font-size="20">←</text>
+    
+    <!-- Title -->
+    <text x="187" y="38" text-anchor="middle" fill="#1B5E20" font-family="Inter" font-size="18" font-weight="700">At the Airport</text>
+    
+    <!-- Bookmark -->
+    <circle cx="343" cy="32" r="20" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="343" y="38" text-anchor="middle" fill="#424242" font-family="Inter" font-size="20">🔖</text>
+  </g>
+  
+  <!-- Lesson Info -->
+  <g transform="translate(20, 120)">
+    <rect x="0" y="0" width="335" height="80" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <!-- Tags -->
+    <g transform="translate(16, 15)">
+      <rect x="0" y="0" width="50" height="20" rx="10" fill="#E8F5E8"/>
+      <text x="25" y="13" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">A1</text>
+      
+      <rect x="60" y="0" width="70" height="20" rx="10" fill="#E3F2FD"/>
+      <text x="95" y="13" text-anchor="middle" fill="#1565C0" font-family="Inter" font-size="10" font-weight="600">15 min</text>
+      
+      <rect x="140" y="0" width="50" height="20" rx="10" fill="#FFF3E0"/>
+      <text x="165" y="13" text-anchor="middle" fill="#E65100" font-family="Inter" font-size="10" font-weight="600">50 XP</text>
+      
+      <rect x="200" y="0" width="80" height="20" rx="10" fill="#F3E5F5"/>
+      <text x="240" y="13" text-anchor="middle" fill="#6A1B9A" font-family="Inter" font-size="10" font-weight="600">Vocabulary</text>
+    </g>
+    
+    <!-- Description -->
+    <text x="16" y="55" fill="#424242" font-family="Inter" font-size="12">Learn essential airport vocabulary for check-in, security,</text>
+    <text x="16" y="70" fill="#424242" font-family="Inter" font-size="12">boarding, and luggage handling.</text>
+  </g>
+  
+  <!-- Lesson Content -->
+  <g transform="translate(20, 220)">
+    <!-- Introduction -->
+    <rect x="0" y="0" width="335" height="100" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <text x="16" y="25" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">📚 Introduction</text>
+    <text x="16" y="45" fill="#424242" font-family="Inter" font-size="12">Welcome to your airport vocabulary lesson! Today you'll</text>
+    <text x="16" y="60" fill="#424242" font-family="Inter" font-size="12">learn 10 essential words and phrases for navigating airports</text>
+    <text x="16" y="75" fill="#424242" font-family="Inter" font-size="12">in English-speaking countries.</text>
+    
+    <!-- Audio Button -->
+    <rect x="16" y="85" width="100" height="30" rx="6" fill="#4CAF50"/>
+    <text x="66" y="103" text-anchor="middle" fill="white" font-family="Inter" font-size="12" font-weight="600">🔊 Listen</text>
+  </g>
+  
+  <!-- Vocabulary List -->
+  <g transform="translate(20, 335)">
+    <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">📖 Key Vocabulary</text>
+    
+    <!-- Word 1 -->
+    <rect x="0" y="15" width="335" height="60" rx="8" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="16" y="30" fill="#1B5E20" font-family="Inter" font-size="14" font-weight="600">Boarding Pass</text>
+    <text x="16" y="45" fill="#424242" font-family="Inter" font-size="12">/ˈbɔːrdɪŋ pæs/ • تذكرة الصعود</text>
+    <text x="16" y="60" fill="#757575" font-family="Inter" font-size="11">The document that allows you to board the plane</text>
+    
+    <!-- Word 2 -->
+    <rect x="0" y="85" width="335" height="60" rx="8" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="16" y="100" fill="#1B5E20" font-family="Inter" font-size="14" font-weight="600">Security Check</text>
+    <text x="16" y="115" fill="#424242" font-family="Inter" font-size="12">/sɪˈkjʊərəti tʃek/ • فحص الأمن</text>
+    <text x="16" y="130" fill="#757575" font-family="Inter" font-size="11">Where they check your bags and body</text>
+    
+    <!-- Word 3 -->
+    <rect x="0" y="155" width="335" height="60" rx="8" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="16" y="170" fill="#1B5E20" font-family="Inter" font-size="14" font-weight="600">Gate</text>
+    <text x="16" y="185" fill="#424242" font-family="Inter" font-size="12">/ɡeɪt/ • البوابة</text>
+    <text x="16" y="200" fill="#757575" font-family="Inter" font-size="11">The door where you board the plane</text>
+  </g>
+  
+  <!-- Practice Section -->
+  <g transform="translate(20, 560)">
+    <rect x="0" y="0" width="335" height="80" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <text x="16" y="25" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">🎯 Quick Practice</text>
+    <text x="16" y="45" fill="#424242" font-family="Inter" font-size="12">What do you show at the gate?</text>
+    
+    <!-- Options -->
+    <rect x="16" y="55" width="80" height="20" rx="10" fill="#E8F5E8" stroke="#4CAF50" stroke-width="1"/>
+    <text x="56" y="68" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">Passport</text>
+    
+    <rect x="106" y="55" width="80" height="20" rx="10" fill="#E8F5E8" stroke="#4CAF50" stroke-width="1"/>
+    <text x="146" y="68" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">Boarding Pass</text>
+    
+    <rect x="196" y="55" width="80" height="20" rx="10" fill="#E8F5E8" stroke="#4CAF50" stroke-width="1"/>
+    <text x="236" y="68" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">ID Card</text>
+  </g>
+  
+  <!-- Bottom Actions -->
+  <g transform="translate(0, 680)">
+    <rect width="375" height="132" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <!-- Progress -->
+    <g transform="translate(20, 20)">
+      <text x="0" y="0" fill="#424242" font-family="Inter" font-size="12">Lesson Progress</text>
+      <rect x="0" y="5" width="335" height="8" rx="4" fill="#E0E0E0"/>
+      <rect x="0" y="5" width="67" height="8" rx="4" fill="#4CAF50"/>
+      <text x="340" y="12" text-anchor="end" fill="#757575" font-family="Inter" font-size="10">20%</text>
+    </g>
+    
+    <!-- Action Buttons -->
+    <g transform="translate(20, 50)">
+      <!-- Continue Button -->
+      <rect x="0" y="0" width="160" height="48" rx="8" fill="#4CAF50"/>
+      <text x="80" y="28" text-anchor="middle" fill="white" font-family="Inter" font-size="16" font-weight="600">Continue</text>
+      
+      <!-- Practice Button -->
+      <rect x="175" y="0" width="160" height="48" rx="8" fill="#2196F3"/>
+      <text x="255" y="28" text-anchor="middle" fill="white" font-family="Inter" font-size="16" font-weight="600">Practice</text>
+    </g>
+  </g>
+</svg>

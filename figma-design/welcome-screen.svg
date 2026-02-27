@@ -1,0 +1,61 @@
+<svg width="375" height="812" viewBox="0 0 375 812" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#F8FAF5"/>
+  
+  <!-- Gradient Background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:#FFFFFF;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <rect width="375" height="812" fill="url(#bgGradient)"/>
+  
+  <!-- Status Bar -->
+  <rect width="375" height="44" fill="#4CAF50"/>
+  <text x="187" y="30" text-anchor="middle" fill="white" font-family="Inter" font-size="14" font-weight="600">9:41 AM</text>
+  
+  <!-- Main Content -->
+  <g transform="translate(0, 80)">
+    <!-- Logo Area -->
+    <circle cx="187" cy="120" r="60" fill="#4CAF50" opacity="0.1"/>
+    <text x="187" y="135" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="48" font-weight="700">🤖</text>
+    
+    <!-- Title -->
+    <text x="187" y="220" text-anchor="middle" fill="#1B5E20" font-family="Inter" font-size="32" font-weight="700">AI English Master</text>
+    
+    <!-- Subtitle -->
+    <text x="187" y="255" text-anchor="middle" fill="#424242" font-family="Inter" font-size="18" font-weight="400">Learn English from Zero to Mastery</text>
+    
+    <!-- Description -->
+    <text x="187" y="285" text-anchor="middle" fill="#757575" font-family="Inter" font-size="14" font-weight="400">Personalized learning with AI teacher</text>
+    
+    <!-- Features -->
+    <g transform="translate(32, 340)">
+      <!-- Feature 1 -->
+      <rect x="0" y="0" width="311" height="60" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+      <circle cx="30" cy="30" r="20" fill="#E8F5E8"/>
+      <text x="30" y="37" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="20">🎯</text>
+      <text x="60" y="25" fill="#424242" font-family="Inter" font-size="14" font-weight="600">Personalized Learning</text>
+      <text x="60" y="42" fill="#757575" font-family="Inter" font-size="12">AI adapts to your level</text>
+      
+      <!-- Feature 2 -->
+      <rect x="0" y="75" width="311" height="60" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+      <circle cx="30" cy="105" r="20" fill="#E8F5E8"/>
+      <text x="30" y="112" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="20">🏆</text>
+      <text x="60" y="100" fill="#424242" font-family="Inter" font-size="14" font-weight="600">Gamification</text>
+      <text x="60" y="117" fill="#757575" font-family="Inter" font-size="12">Earn XP and achievements</text>
+      
+      <!-- Feature 3 -->
+      <rect x="0" y="150" width="311" height="60" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+      <circle cx="30" cy="180" r="20" fill="#E8F5E8"/>
+      <text x="30" y="187" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="20">💬</text>
+      <text x="60" y="175" fill="#424242" font-family="Inter" font-size="14" font-weight="600">AI Teacher</text>
+      <text x="60" y="192" fill="#757575" font-family="Inter" font-size="12">24/7 conversation practice</text>
+    </g>
+    
+    <!-- CTA Button -->
+    <rect x="32" y="680" width="311" height="56" rx="12" fill="#4CAF50"/>
+    <text x="187" y="714" text-anchor="middle" fill="white" font-family="Inter" font-size="18" font-weight="600">Start Learning</text>
+  </g>
+</svg>

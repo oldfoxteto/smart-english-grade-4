@@ -1,0 +1,433 @@
+# Kubernetes configuration for Smart English Grade 4
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-english-frontend
+  labels:
+    app: smart-english
+    component: frontend
+    environment: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: smart-english
+        component: frontend
+        environment: production
+    spec:
+      containers:
+      - name: frontend
+        image: ghcr.io/smart-english-grade-4/smart-english-grade-4:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: API_URL
+          value: "https://api.smart-english-grade-4.com"
+        - name: APP_VERSION
+          value: "1.0.0"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+          readOnly: false
+      volumes:
+      - name: nginx-cache
+        emptyDir:
+          sizeLimit: 100Mi
+      imagePullSecrets:
+      - name: ghcr-secret
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smart-english-frontend-service
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+      app: smart-english
+      component: frontend
+---
+apiVersion: v1
+kind: Ingress
+metadata:
+  name: smart-english-frontend-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      gzip on;
+      gzip_types text/plain text/css application/json application/javascript text/xml application/xml+rss text/javascript;
+spec:
+  tls:
+  - hosts:
+    - smart-english-grade-4.com
+    secretName: smart-english-tls
+  rules:
+  - host: smart-english-grade-4.com
+    http:
+      paths:
+      - path: /
+        backend:
+          service:
+            name: smart-english-frontend-service
+            port:
+              number: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: smart-english-frontend-hpa
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: smart-english-frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: smart-english-frontend-pdb
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  minAvailable: 1
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  labels:
+    app: smart-english
+    component: frontend
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    events {
+        worker_connections 1024;
+    }
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        client_max_body_size 10M;
+        
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+            
+        server {
+            listen 80;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            location / {
+                try_files $uri $uri/ /index.html;
+            }
+            
+            location /static/ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            location ~* \.(js|css)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            location ~* \.(jpg|jpeg|png|gif|ico|svg|webp)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+        }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smart-english-tls
+  labels:
+    app: smart-english
+    component: frontend
+type: Opaque
+data:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    # Your TLS certificate here
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    # Your TLS private key here
+    -----END PRIVATE KEY-----
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: smart-english-frontend-metrics
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  selector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+  endpoints:
+  - port: 80
+    path: /metrics
+    interval: 30s
+    timeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: smart-english-frontend-service-monitor
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  selector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+  endpoints:
+  - port: http
+    path: /nginx_status
+    interval: 30s
+    timeout: 10s
+---
+apiVersion: v1
+kind: PodMonitor
+metadata:
+  name: smart-english-frontend-pod-monitor
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  selector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+  podMetricsEndpoints:
+  - targetPort: 80
+    path: /metrics
+    interval: 30s
+    timeout: 10s
+---
+apiVersion: v1
+kind: NetworkPolicy
+metadata:
+  name: smart-english-frontend-netpol
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: smart-english
+      component: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: monitoring
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: prometheus
+  egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
+    - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: smart-english-frontend-quota
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    persistentvolumeclaims: "5"
+    count/services: "10"
+    count/pods: "20"
+    count/secrets: "10"
+    count/configmaps: "10"
+  soft:
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    persistentvolumeclaims: "3"
+    count/services: "5"
+    count/pods: "10"
+    count/secrets: "5"
+    count/configmaps: "5"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: smart-english-frontend-limits
+  labels:
+    app: smart-english
+    component: frontend
+spec:
+  limits:
+    default:
+      memory: "256Mi"
+      cpu: "200m"
+    defaultRequest:
+      memory: "128Mi"
+      cpu: "100m"
+---
+apiVersion: v1
+kind: PriorityClass
+metadata:
+  name: smart-english-frontend-high-priority
+  labels:
+    app: smart-english
+    component: frontend
+value: 1000
+globalDefault: false
+description: "High priority class for Smart English frontend pods"
+---
+apiVersion: v1
+kind: PriorityClass
+metadata:
+  name: smart-english-frontend-low-priority
+  labels:
+    app: smart-english
+    component: frontend
+value: 100
+globalDefault: false
+description: "Low priority class for Smart English frontend pods"

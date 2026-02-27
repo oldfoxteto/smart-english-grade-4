@@ -1,0 +1,155 @@
+<svg width="375" height="812" viewBox="0 0 375 812" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#F8FAF5"/>
+  
+  <!-- Status Bar -->
+  <rect width="375" height="44" fill="#4CAF50"/>
+  <text x="187" y="30" text-anchor="middle" fill="white" font-family="Inter" font-size="14" font-weight="600">9:41 AM</text>
+  
+  <!-- Header -->
+  <g transform="translate(0, 60)">
+    <!-- Menu Button -->
+    <circle cx="32" cy="32" r="20" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="32" y="38" text-anchor="middle" fill="#424242" font-family="Inter" font-size="20">☰</text>
+    
+    <!-- Title -->
+    <text x="187" y="38" text-anchor="middle" fill="#1B5E20" font-family="Inter" font-size="20" font-weight="700">Dashboard</text>
+    
+    <!-- Notifications -->
+    <circle cx="343" cy="32" r="20" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    <text x="343" y="38" text-anchor="middle" fill="#424242" font-family="Inter" font-size="20">🔔</text>
+  </g>
+  
+  <!-- User Profile Card -->
+  <g transform="translate(20, 120)">
+    <rect x="0" y="0" width="335" height="120" rx="16" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <!-- Avatar -->
+    <circle cx="60" cy="60" r="30" fill="#4CAF50"/>
+    <text x="60" y="68" text-anchor="middle" fill="white" font-family="Inter" font-size="24" font-weight="700">A</text>
+    
+    <!-- User Info -->
+    <g transform="translate(110, 25)">
+      <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="18" font-weight="700">Ahmed Ali</text>
+      <text x="0" y="25" fill="#4CAF50" font-family="Inter" font-size="14" font-weight="600">Level A1 • Beginner</text>
+      <text x="0" y="45" fill="#757575" font-family="Inter" font-size="12">Goal: Travel • Track: Travel English</text>
+    </g>
+    
+    <!-- Stats -->
+    <g transform="translate(110, 75)">
+      <rect x="0" y="0" width="60" height="30" rx="6" fill="#E8F5E8"/>
+      <text x="30" y="20" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="12" font-weight="600">0 XP</text>
+      
+      <rect x="70" y="0" width="80" height="30" rx="6" fill="#FFF3E0"/>
+      <text x="110" y="20" text-anchor="middle" fill="#E65100" font-family="Inter" font-size="12" font-weight="600">🔥 0 Days</text>
+      
+      <rect x="160" y="0" width="65" height="30" rx="6" fill="#E3F2FD"/>
+      <text x="192" y="20" text-anchor="middle" fill="#1565C0" font-family="Inter" font-size="12" font-weight="600">0 Lessons</text>
+    </g>
+  </g>
+  
+  <!-- Progress Overview -->
+  <g transform="translate(20, 260)">
+    <rect x="0" y="0" width="335" height="100" rx="16" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <text x="20" y="30" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">Today's Progress</text>
+    
+    <!-- Progress Bars -->
+    <g transform="translate(20, 45)">
+      <text x="0" y="0" fill="#424242" font-family="Inter" font-size="12">Daily Goal</text>
+      <rect x="0" y="5" width="295" height="8" rx="4" fill="#E0E0E0"/>
+      <rect x="0" y="5" width="0" height="8" rx="4" fill="#4CAF50"/>
+      <text x="300" y="12" text-anchor="end" fill="#757575" font-family="Inter" font-size="10">0%</text>
+    </g>
+    
+    <g transform="translate(20, 70)">
+      <text x="0" y="0" fill="#424242" font-family="Inter" font-size="12">Level Progress</text>
+      <rect x="0" y="5" width="295" height="8" rx="4" fill="#E0E0E0"/>
+      <rect x="0" y="5" width="0" height="8" rx="4" fill="#2196F3"/>
+      <text x="300" y="12" text-anchor="end" fill="#757575" font-family="Inter" font-size="10">0/500 XP</text>
+    </g>
+  </g>
+  
+  <!-- Quick Actions -->
+  <g transform="translate(20, 380)">
+    <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">Quick Actions</text>
+    
+    <!-- Action Buttons -->
+    <g transform="translate(0, 20)">
+      <!-- AI Chat -->
+      <rect x="0" y="0" width="160" height="80" rx="12" fill="#4CAF50"/>
+      <text x="80" y="35" text-anchor="middle" fill="white" font-family="Inter" font-size="24">💬</text>
+      <text x="80" y="55" text-anchor="middle" fill="white" font-family="Inter" font-size="12" font-weight="600">Chat with AI</text>
+      
+      <!-- Start Lesson -->
+      <rect x="175" y="0" width="160" height="80" rx="12" fill="#2196F3"/>
+      <text x="255" y="35" text-anchor="middle" fill="white" font-family="Inter" font-size="24">📚</text>
+      <text x="255" y="55" text-anchor="middle" fill="white" font-family="Inter" font-size="12" font-weight="600">Start Lesson</text>
+    </g>
+  </g>
+  
+  <!-- Recommended Lessons -->
+  <g transform="translate(20, 500)">
+    <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="16" font-weight="700">Recommended Lessons</text>
+    
+    <!-- Lesson Cards -->
+    <g transform="translate(0, 20)">
+      <!-- Lesson 1 -->
+      <rect x="0" y="0" width="335" height="70" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+      <rect x="0" y="0" width="4" height="70" rx="2" fill="#4CAF50"/>
+      
+      <g transform="translate(16, 15)">
+        <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="14" font-weight="600">At the Airport</text>
+        <text x="0" y="20" fill="#757575" font-family="Inter" font-size="12">Vocabulary • 15 min • 50 XP</text>
+        <rect x="0" y="30" width="80" height="20" rx="10" fill="#E8F5E8"/>
+        <text x="40" y="43" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">Beginner</text>
+      </g>
+      
+      <text x="315" y="45" text-anchor="end" fill="#4CAF50" font-family="Inter" font-size="20">→</text>
+    </g>
+    
+    <g transform="translate(0, 100)">
+      <!-- Lesson 2 -->
+      <rect x="0" y="0" width="335" height="70" rx="12" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+      <rect x="0" y="0" width="4" height="70" rx="2" fill="#2196F3"/>
+      
+      <g transform="translate(16, 15)">
+        <text x="0" y="0" fill="#1B5E20" font-family="Inter" font-size="14" font-weight="600">Hotel Check-in</text>
+        <text x="0" y="20" fill="#757575" font-family="Inter" font-size="12">Conversation • 20 min • 75 XP</text>
+        <rect x="0" y="30" width="80" height="20" rx="10" fill="#E8F5E8"/>
+        <text x="40" y="43" text-anchor="middle" fill="#2E7D32" font-family="Inter" font-size="10" font-weight="600">Beginner</text>
+      </g>
+      
+      <text x="315" y="45" text-anchor="end" fill="#2196F3" font-family="Inter" font-size="20">→</text>
+    </g>
+  </g>
+  
+  <!-- Bottom Navigation -->
+  <g transform="translate(0, 740)">
+    <rect width="375" height="72" fill="white" stroke="#E0E0E0" stroke-width="1"/>
+    
+    <!-- Home -->
+    <g transform="translate(47, 16)">
+      <text x="0" y="0" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="20">🏠</text>
+      <text x="0" y="25" text-anchor="middle" fill="#4CAF50" font-family="Inter" font-size="10" font-weight="600">Home</text>
+    </g>
+    
+    <!-- Lessons -->
+    <g transform="translate(130, 16)">
+      <text x="0" y="0" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="20">📚</text>
+      <text x="0" y="25" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="10">Lessons</text>
+    </g>
+    
+    <!-- Progress -->
+    <g transform="translate(213, 16)">
+      <text x="0" y="0" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="20">📊</text>
+      <text x="0" y="25" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="10">Progress</text>
+    </g>
+    
+    <!-- Profile -->
+    <g transform="translate(296, 16)">
+      <text x="0" y="0" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="20">👤</text>
+      <text x="0" y="25" text-anchor="middle" fill="#9E9E9E" font-family="Inter" font-size="10">Profile</text>
+    </g>
+  </g>
+</svg>
