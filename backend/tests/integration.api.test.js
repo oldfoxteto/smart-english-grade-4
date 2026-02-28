@@ -195,6 +195,7 @@ test("Analytics: AI tutor events are stored", { skip: dbSkip }, async () => {
     `SELECT event_name, source
      FROM analytics_events
      WHERE user_id = $1
+       AND event_name = 'ai_tutor_submitted'
      ORDER BY created_at DESC
      LIMIT 1`,
     [userId]
