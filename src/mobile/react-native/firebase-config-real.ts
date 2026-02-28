@@ -4,15 +4,17 @@ import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import analytics from '@react-native-firebase/analytics';
 
-// Firebase configuration
+const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+
+// Firebase configuration (use .env / CI secrets in real environments)
 const firebaseConfig = {
-  apiKey: "AIzaSyD6qPkFaPtro8clMrzSZU6PMt3KNo1ye4M",
-  authDomain: "ai-english-master.firebaseapp.com",
-  projectId: "ai-english-master",
-  storageBucket: "ai-english-master.firebasestorage.app",
-  messagingSenderId: "1024060586198",
-  appId: "1:1024060586198:web:55a72ac8f547ae5797b177",
-  measurementId: "G-CT3J8HKTTP"
+  apiKey: env.FIREBASE_API_KEY ?? "your_api_key_here",
+  authDomain: env.FIREBASE_AUTH_DOMAIN ?? "your_project.firebaseapp.com",
+  projectId: env.FIREBASE_PROJECT_ID ?? "your_project_id",
+  storageBucket: env.FIREBASE_STORAGE_BUCKET ?? "your_project.firebasestorage.app",
+  messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID ?? "your_sender_id",
+  appId: env.FIREBASE_APP_ID ?? "your_app_id",
+  measurementId: env.FIREBASE_MEASUREMENT_ID ?? "your_measurement_id"
 };
 
 // Initialize Firebase

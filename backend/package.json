@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test \"tests/**/*.test.js\"",
+    "test": "node --test tests",
     "db:migrate": "node scripts/run-sql-file.js sql/migrations/001_init_schema.sql",
     "db:seed": "node scripts/run-sql-file.js sql/migrations/002_seed_core.sql",
     "db:backup": "node scripts/backup-db.js",

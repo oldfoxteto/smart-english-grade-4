@@ -1,101 +1,67 @@
-# React + TypeScript + Vite
+# Smart English Grade 4
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Production-oriented web platform to teach English for grade 4 with:
+- structured lessons and practice flows,
+- AI-assisted tutoring modules,
+- backend APIs for auth, learning path, and gamification,
+- Firebase/Firestore integration and deployment workflows.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Frontend: React + TypeScript + Vite
+- Backend: Node.js + Express + PostgreSQL
+- Infra: Docker, GitHub Actions, Firebase (Firestore + Storage rules)
 
-## React Compiler
+## Quick Start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# frontend
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# backend
+cd backend
+npm ci
+npm run db:migrate
+npm run db:seed
+npm run dev
 ```
 
-## Product Blueprint (LISAN AI)
+## Quality Commands
 
-- docs/01_PRODUCT_VISION_AR.md
-- docs/02_SYSTEM_AI_DATA_ARCH.md
-- docs/03_CURRICULUM_GAMIFICATION.md
-- docs/04_ROADMAP_120_DAYS.md
-- docs/05_OPERATIONS_RUNBOOK.md
-- docs/06_CONTENT_QA_AR.md
-- docs/07_PRELAUNCH_TESTING.md
+```bash
+# frontend
+npm run lint
+npm run type-check
+npm run test:run
+npm run build
+```
 
-## Backend MVP (Auth + Placement + Learning Path)
+```bash
+# backend
+cd backend
+npm test
+```
 
-- backend/README.md
-- backend/sql/schema.sql
-- backend/sql/seed.sql
-- backend/contracts/openapi.yaml
+## Deployment Notes
 
-## Environment Compose Files
+- Main CI/CD workflow: `.github/workflows/ci-cd.yml`
+- Database backup workflow: `.github/workflows/db-backup.yml`
+- Production/staging deployment jobs require repository secrets (`PROD_*`, `STAGING_*`).
 
-- `docker-compose.dev.yml`
-- `docker-compose.staging.yml`
-- `docker-compose.prod.yml`
+## Environment and Secrets
 
-## CI/CD + Backup Workflows
+- Real environment files are not committed.
+- Use:
+  - `backend/.env.example`
+  - `server/.env.example`
+  - `src/mobile/react-native/.env.example`
+- Keep all tokens/keys in GitHub Secrets and local `.env` only.
 
-- `.github/workflows/ci-cd.yml`
-- `.github/workflows/db-backup.yml`
+## Project Docs
+
+- Product/roadmap docs: `docs/`
+- Backend API contract: `backend/contracts/openapi.yaml`
+- Ops and testing guides: `docs/05_OPERATIONS_RUNBOOK.md`, `docs/07_PRELAUNCH_TESTING.md`
