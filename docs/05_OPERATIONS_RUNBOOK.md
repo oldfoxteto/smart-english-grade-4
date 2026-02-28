@@ -42,13 +42,26 @@ Required repository secrets:
 
 GitHub workflow: `.github/workflows/db-backup.yml`
 
+- single unified backup workflow
 - schedule: every 6 hours
+- default target: `production`
+- manual run supports: `production | staging | development`
 - uses `npm run db:backup`
 - uploads compressed SQL backup artifact
+- optional S3 upload on manual runs (`upload_to_s3=true`)
 
 Required secret:
 
 - `PROD_DATABASE_URL`
+
+Optional secrets (if using additional environments / S3):
+
+- `STAGING_DATABASE_URL`
+- `DEV_DATABASE_URL`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+- `AWS_S3_BACKUP_BUCKET`
 
 ### Manual backup
 
