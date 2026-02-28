@@ -1,461 +1,319 @@
-// Lessons Page - Fixed Version
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Box,
-  Typography,
+  Button,
   Card,
   CardContent,
-  TextField,
+  Chip,
   FormControl,
+  Grid,
   InputLabel,
-  Select,
+  LinearProgress,
   MenuItem,
+  Select,
   Stack,
+  TextField,
+  Typography,
 } from '@mui/material';
+import { CheckCircle, Lock, PlayArrow } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
+import { getAllA1Lessons, type A1Lesson } from '../core/a1Content';
 import {
-  Search,
-  School,
-  PlayArrow,
-  CheckCircle,
-  Lock,
-  Timer,
-  Star,
-  TrendingUp,
-  Book,
-  Psychology,
-  RecordVoiceOver,
-  Headphones,
-} from '@mui/icons-material';
+  getMasteryState,
+  getMasteryThreshold,
+  getNextRecommendedLesson,
+  getUnitRoadmap,
+  getUnlockedLessonIds,
+  subscribeToMasteryUpdates,
+} from '../core/masteryEngine';
 
-// Import design system
-import { tokens } from '../design-system/tokens';
-import {
-  AppCard,
-  AppButton,
-  AppProgress,
-  AppAvatar,
-  AppChip,
-  AppGrid,
-} from '../components/ui';
-
-// Types
-interface Lesson {
-  id: string;
-  title: string;
-  arabicTitle: string;
-  description: string;
-  arabicDescription: string;
-  category: 'grammar' | 'vocabulary' | 'reading' | 'listening' | 'speaking';
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  duration: number;
-  progress: number;
-  completed: boolean;
-  locked: boolean;
-  rating: number;
-  enrolled: number;
-  instructor: {
-    name: string;
-    avatar: string;
-  };
-}
-
-// Mock data
-const mockLessons: Lesson[] = [
-  {
-    id: '1',
-    title: 'Present Perfect Tense',
-    arabicTitle: 'زمن المضارع التام',
-    description: 'Learn how to use present perfect tense correctly',
-    arabicDescription: 'تعلم كيفية استخدام زمن المضارع التام بشكل صحيح',
-    category: 'grammar',
-    difficulty: 'intermediate',
-    duration: 45,
-    progress: 75,
-    completed: false,
-    locked: false,
-    rating: 4.5,
-    enrolled: 1234,
-    instructor: {
-      name: 'Dr. Ahmed',
-      avatar: '/avatars/instructor1.jpg',
-    },
-  },
-  {
-    id: '2',
-    title: 'Business Vocabulary',
-    arabicTitle: 'مفردات الأعمال',
-    description: 'Essential business English vocabulary',
-    arabicDescription: 'مفردات إنجليزية أساسية للأعمال',
-    category: 'vocabulary',
-    difficulty: 'advanced',
-    duration: 60,
-    progress: 30,
-    completed: false,
-    locked: false,
-    rating: 4.8,
-    enrolled: 892,
-    instructor: {
-      name: 'Prof. Sarah',
-      avatar: '/avatars/instructor2.jpg',
-    },
-  },
-  {
-    id: '3',
-    title: 'Daily Conversations',
-    arabicTitle: 'المحادثات اليومية',
-    description: 'Common phrases for daily conversations',
-    arabicDescription: 'عبارات شائعة للمحادثات اليومية',
-    category: 'speaking',
-    difficulty: 'beginner',
-    duration: 30,
-    progress: 100,
-    completed: true,
-    locked: false,
-    rating: 4.7,
-    enrolled: 2156,
-    instructor: {
-      name: 'Ms. Fatima',
-      avatar: '/avatars/instructor3.jpg',
-    },
-  },
-];
-
-const LessonsPage: React.FC = () => {
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [filteredLessons, setFilteredLessons] = useState<Lesson[]>([]);
+const LessonsPage = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [unitFilter, setUnitFilter] = useState<string>('all');
+  const [masteryRevision, setMasteryRevision] = useState(0);
+
+  const allLessons = useMemo(() => getAllA1Lessons(), []);
+  const masteryState = useMemo(
+    () => getMasteryState(),
+    // State comes from localStorage + mastery update event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [masteryRevision]
+  );
+  const unlockedIds = useMemo(
+    () => new Set(getUnlockedLessonIds(allLessons, masteryState)),
+    [allLessons, masteryState]
+  );
+  const threshold = getMasteryThreshold();
+  const roadmap = useMemo(() => getUnitRoadmap(allLessons, masteryState), [allLessons, masteryState]);
+  const nextLesson = useMemo(() => getNextRecommendedLesson(allLessons, masteryState), [allLessons, masteryState]);
 
   useEffect(() => {
-    setTimeout(() => {
-      setLessons(mockLessons);
-      setFilteredLessons(mockLessons);
-      setLoading(false);
-    }, 1000);
+    const unsubscribe = subscribeToMasteryUpdates(() => {
+      setMasteryRevision((value) => value + 1);
+    });
+    return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    let filtered = lessons;
-    if (searchQuery) {
-      filtered = filtered.filter(lesson =>
-        lesson.arabicTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredLessons = useMemo(() => {
+    return allLessons.filter((lesson) => {
+      const textMatches =
+        !searchQuery ||
         lesson.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        lesson.arabicDescription.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(lesson => lesson.category === selectedCategory);
-    }
-    if (selectedDifficulty !== 'all') {
-      filtered = filtered.filter(lesson => lesson.difficulty === selectedDifficulty);
-    }
-    setFilteredLessons(filtered);
-  }, [lessons, searchQuery, selectedCategory, selectedDifficulty]);
+        lesson.titleAr.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        lesson.description.toLowerCase().includes(searchQuery.toLowerCase());
+      const categoryMatches = categoryFilter === 'all' || lesson.category === categoryFilter;
+      const unitMatches = unitFilter === 'all' || String(lesson.unit) === unitFilter;
+      return textMatches && categoryMatches && unitMatches;
+    });
+  }, [allLessons, categoryFilter, searchQuery, unitFilter]);
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'grammar': return <Book />;
-      case 'vocabulary': return <Psychology />;
-      case 'reading': return <Book />;
-      case 'listening': return <Headphones />;
-      case 'speaking': return <RecordVoiceOver />;
-      default: return <School />;
+  const masteredCount = allLessons.filter((lesson) => (masteryState.lessonMastery[lesson.id] || 0) >= threshold).length;
+  const unlockedCount = allLessons.filter((lesson) => unlockedIds.has(lesson.id)).length;
+
+  const getLockReason = (lesson: A1Lesson) => {
+    const index = allLessons.findIndex((item) => item.id === lesson.id);
+    if (index <= 0) return 'Unlocked';
+    const previous = allLessons[index - 1];
+    const previousMastery = masteryState.lessonMastery[previous.id] || 0;
+    if (previousMastery < threshold) {
+      return `Complete "${previous.titleAr}" to ${threshold}% mastery`;
     }
+    return 'Unlocked';
   };
-
-  const getCategoryColor = (category: string): 'primary' | 'secondary' | 'success' | 'warning' | 'error' => {
-    switch (category) {
-      case 'grammar': return 'primary';
-      case 'vocabulary': return 'secondary';
-      case 'reading': return 'success';
-      case 'listening': return 'warning';
-      case 'speaking': return 'error';
-      default: return 'primary';
-    }
-  };
-
-  const getDifficultyColor = (difficulty: string): 'success' | 'warning' | 'error' => {
-    switch (difficulty) {
-      case 'beginner': return 'success';
-      case 'intermediate': return 'warning';
-      case 'advanced': return 'error';
-      default: return 'warning';
-    }
-  };
-
-  const getProgressColor = (progress: number): 'success' | 'warning' | 'error' => {
-    if (progress >= 80) return 'success';
-    if (progress >= 50) return 'warning';
-    return 'error';
-  };
-
-  const handleLessonClick = (lessonId: string) => {
-    console.log('Navigate to lesson:', lessonId);
-    window.location.href = `/lesson/${lessonId}`;
-  };
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <Stack spacing={2} alignItems="center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-          <Typography variant="h6">جاري تحميل الدروس...</Typography>
-        </Stack>
-      </Box>
-    );
-  }
 
   return (
-    <Box sx={{ p: tokens.spacing.lg }}>
-      <Box sx={{ mb: tokens.spacing.xl }}>
-        <Typography variant="h4" sx={{ fontWeight: 900, mb: tokens.spacing.md }}>
-          📚 الدروس المتاحة
+    <Box sx={{ pb: 6, minHeight: '100vh' }}>
+      <Box
+        sx={{
+          background: 'linear-gradient(135deg, #0B4B88 0%, #0C7FA0 60%, #7BC8A4 100%)',
+          py: { xs: 3, md: 4 },
+          px: { xs: 2, md: 3 },
+          mb: 3,
+          textAlign: 'center',
+        }}
+      >
+        <Typography variant="h4" sx={{ color: 'white', fontWeight: 900, mb: 1 }}>
+          Smart Lesson Map
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          اختر الدرس المناسب لمستواك وابدأ رحلة التعلم
+        <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)' }}>
+          Lessons unlock progressively based on real mastery.
         </Typography>
       </Box>
 
-      <AppCard sx={{ mb: tokens.spacing.xl }}>
-        <Stack spacing={tokens.spacing.lg}>
-          <TextField
-            fullWidth
-            placeholder="ابحث عن درس..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <Box sx={{ display: 'flex', alignItems: 'center', pr: 1 }}>
-                  <Search />
-                </Box>
-              ),
-            }}
-            sx={{ mb: tokens.spacing.md }}
-          />
-
-          <Stack direction="row" spacing={tokens.spacing.md}>
-            <FormControl fullWidth>
-              <InputLabel>الفئة</InputLabel>
-              <Select
-                value={selectedCategory}
-                label="الفئة"
-                onChange={(e) => setSelectedCategory(e.target.value)}
-              >
-                <MenuItem value="all">جميع الفئات</MenuItem>
-                <MenuItem value="grammar">القواعد</MenuItem>
-                <MenuItem value="vocabulary">المفردات</MenuItem>
-                <MenuItem value="reading">القراءة</MenuItem>
-                <MenuItem value="listening">الاستماع</MenuItem>
-                <MenuItem value="speaking">التحدث</MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth>
-              <InputLabel>المستوى</InputLabel>
-              <Select
-                value={selectedDifficulty}
-                label="المستوى"
-                onChange={(e) => setSelectedDifficulty(e.target.value)}
-              >
-                <MenuItem value="all">جميع المستويات</MenuItem>
-                <MenuItem value="beginner">مبتدئ</MenuItem>
-                <MenuItem value="intermediate">متوسط</MenuItem>
-                <MenuItem value="advanced">متقدم</MenuItem>
-              </Select>
-            </FormControl>
-          </Stack>
-        </Stack>
-      </AppCard>
-
-      <AppGrid spacing={tokens.spacing.lg} sx={{ mb: tokens.spacing.xl }}>
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="primary" size="lg">
-                <School />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {lessons.length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                إجمالي الدروس
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="success" size="lg">
-                <CheckCircle />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {lessons.filter(l => l.completed).length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                الدروس المكتملة
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="warning" size="lg">
-                <TrendingUp />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {lessons.filter(l => l.progress > 0 && !l.completed).length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                الدروس قيد التقدم
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="secondary" size="lg">
-                <Star />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Level 12
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                3450 XP
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-      </AppGrid>
-
-      <AppCard title="الدروس المتاحة" subtitle="اختر الدرس التالي للبدء">
-        <AppGrid spacing={tokens.spacing.lg}>
-          {filteredLessons.map((lesson) => (
-            <AppGrid xs={12} sm={6} md={4} key={lesson.id}>
-              <Card
-                onClick={() => handleLessonClick(lesson.id)}
-                sx={{
-                  opacity: lesson.locked ? 0.6 : 1,
-                  cursor: lesson.locked ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease-in-out',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: tokens.shadows.md,
-                  },
-                }}
-              >
-                <CardContent sx={{ p: tokens.spacing.lg }}>
-                  <Stack spacing={tokens.spacing.md}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <AppChip
-                        label={lesson.arabicTitle}
-                        color={getCategoryColor(lesson.category)}
-                        size="small"
-                        icon={getCategoryIcon(lesson.category)}
-                      />
-                      <AppChip
-                        label={lesson.difficulty}
-                        color={getDifficultyColor(lesson.difficulty)}
-                        size="small"
-                      />
-                    </Box>
-
-                    <Stack direction="row" spacing={tokens.spacing.sm} alignItems="center">
-                      <AppAvatar
-                        src={lesson.instructor.avatar}
-                        size="sm"
-                      >
-                        {lesson.instructor.name.charAt(0)}
-                      </AppAvatar>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {lesson.instructor.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          المدرب
-                        </Typography>
-                      </Box>
-                    </Stack>
-
-                    <Typography variant="h6" sx={{ fontWeight: 600, mb: tokens.spacing.xs }}>
-                      {lesson.arabicTitle}
-                    </Typography>
-
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: tokens.spacing.sm }}>
-                      {lesson.arabicDescription}
-                    </Typography>
-
-                    <Stack direction="row" spacing={tokens.spacing.md} alignItems="center">
-                      <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                        <Timer sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {lesson.duration} دقيقة
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                        <Star sx={{ fontSize: 16, color: 'warning.main' }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {lesson.rating}
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                        <School sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {lesson.enrolled}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-
-                    <AppProgress
-                      value={lesson.progress}
-                      color={getProgressColor(lesson.progress)}
-                      showLabel
-                      label={lesson.completed ? "مكتمل" : "التقدم"}
-                    />
-
-                    <AppButton
-                      startIcon={lesson.locked ? <Lock /> : lesson.completed ? <CheckCircle /> : <PlayArrow />}
-                      color={lesson.completed ? 'success' : 'primary'}
-                      onClick={() => handleLessonClick(lesson.id)}
-                      disabled={lesson.locked}
-                      fullWidth
-                    >
-                      {lesson.locked ? 'مقفل' : lesson.completed ? 'مراجعة' : 'بدء الدرس'}
-                    </AppButton>
-                  </Stack>
-                </CardContent>
-              </Card>
-            </AppGrid>
-          ))}
-        </AppGrid>
-
-        {filteredLessons.length === 0 && (
-          <Box sx={{ textAlign: 'center', py: tokens.spacing.xl }}>
-            <Typography variant="h6" color="text.secondary" sx={{ mb: tokens.spacing.md }}>
-              لا توجد دروس مطابقة للبحث
-            </Typography>
-            <AppButton
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedCategory('all');
-                setSelectedDifficulty('all');
-              }}
-              variant="outlined"
-            >
-              مسح الفلاتر
-            </AppButton>
-          </Box>
+      <Box sx={{ px: { xs: 2, md: 4 }, maxWidth: 1200, mx: 'auto' }}>
+        {nextLesson && (
+          <Alert
+            severity="info"
+            sx={{ mb: 2.5 }}
+            action={
+              <Button variant="outlined" size="small" onClick={() => navigate(`/lesson/${nextLesson.id}`)}>
+                Continue
+              </Button>
+            }
+          >
+            Next recommended lesson: <strong>{nextLesson.titleAr}</strong>
+          </Alert>
         )}
-      </AppCard>
+
+        <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">Total lessons</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 900 }}>{allLessons.length}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">Unlocked</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 900 }}>{unlockedCount}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">Mastered ({threshold}%+)</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 900 }}>{masteredCount}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        <Card sx={{ mb: 2.5 }}>
+          <CardContent>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1.25 }}>
+              Unit Progress
+            </Typography>
+            <Grid container spacing={1.25}>
+              {roadmap.map((entry) => {
+                const unlockedPct = Math.round((entry.unlocked / Math.max(1, entry.total)) * 100);
+                const masteryPct = Math.round((entry.mastered / Math.max(1, entry.total)) * 100);
+                return (
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }} key={entry.unit}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>
+                          Unit {entry.unit}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Unlocked {entry.unlocked}/{entry.total}
+                        </Typography>
+                        <LinearProgress variant="determinate" value={unlockedPct} sx={{ mt: 0.75, mb: 1, height: 7, borderRadius: 4 }} />
+                        <Typography variant="caption" color="text.secondary">
+                          Mastered {entry.mastered}/{entry.total}
+                        </Typography>
+                        <LinearProgress
+                          variant="determinate"
+                          value={masteryPct}
+                          sx={{
+                            mt: 0.75,
+                            height: 7,
+                            borderRadius: 4,
+                            '& .MuiLinearProgress-bar': { background: '#2E7D32' },
+                          }}
+                        />
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </CardContent>
+        </Card>
+
+        <Card sx={{ mb: 2.5 }}>
+          <CardContent>
+            <Stack spacing={1.25}>
+              <TextField
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search lesson by title..."
+                fullWidth
+              />
+              <Grid container spacing={1.25}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Category</InputLabel>
+                    <Select value={categoryFilter} label="Category" onChange={(event) => setCategoryFilter(event.target.value)}>
+                      <MenuItem value="all">All</MenuItem>
+                      <MenuItem value="vocabulary">Vocabulary</MenuItem>
+                      <MenuItem value="grammar">Grammar</MenuItem>
+                      <MenuItem value="reading">Reading</MenuItem>
+                      <MenuItem value="listening">Listening</MenuItem>
+                      <MenuItem value="speaking">Speaking</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Unit</InputLabel>
+                    <Select value={unitFilter} label="Unit" onChange={(event) => setUnitFilter(event.target.value)}>
+                      <MenuItem value="all">All Units</MenuItem>
+                      {[...new Set(allLessons.map((lesson) => lesson.unit))]
+                        .sort((a, b) => a - b)
+                        .map((unit) => (
+                          <MenuItem key={unit} value={String(unit)}>
+                            Unit {unit}
+                          </MenuItem>
+                        ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Grid container spacing={1.5}>
+          {filteredLessons.map((lesson) => {
+            const masteryScore = masteryState.lessonMastery[lesson.id] || 0;
+            const unlocked = unlockedIds.has(lesson.id);
+            const mastered = masteryScore >= threshold;
+            return (
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={lesson.id}>
+                <Card
+                  sx={{
+                    height: '100%',
+                    opacity: unlocked ? 1 : 0.74,
+                    border: mastered ? '2px solid #2E7D32' : '1px solid #E5EAF2',
+                  }}
+                >
+                  <CardContent>
+                    <Stack spacing={1.25}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Chip label={`Unit ${lesson.unit}`} size="small" />
+                        <Chip
+                          size="small"
+                          color={unlocked ? (mastered ? 'success' : 'primary') : 'default'}
+                          icon={unlocked ? <CheckCircle /> : <Lock />}
+                          label={unlocked ? (mastered ? 'Mastered' : 'Unlocked') : 'Locked'}
+                        />
+                      </Box>
+
+                      <Typography variant="h6" sx={{ fontWeight: 900 }}>{lesson.titleAr}</Typography>
+                      <Typography variant="body2" color="text.secondary">{lesson.description}</Typography>
+
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip label={lesson.category} size="small" />
+                        <Chip label={lesson.level} size="small" />
+                        <Chip label={`${lesson.duration} min`} size="small" />
+                      </Stack>
+
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                          <Typography variant="caption">Lesson mastery</Typography>
+                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                            {masteryScore}%
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={masteryScore}
+                          sx={{
+                            height: 8,
+                            borderRadius: 4,
+                            '& .MuiLinearProgress-bar': {
+                              background:
+                                masteryScore >= threshold
+                                  ? 'linear-gradient(90deg, #2E7D32, #66BB6A)'
+                                  : 'linear-gradient(90deg, #EF6C00, #FFA726)',
+                            },
+                          }}
+                        />
+                      </Box>
+
+                      {!unlocked && (
+                        <Typography variant="caption" color="error">
+                          {getLockReason(lesson)}
+                        </Typography>
+                      )}
+
+                      <Button
+                        variant={unlocked ? 'contained' : 'outlined'}
+                        color={unlocked ? 'primary' : 'inherit'}
+                        startIcon={unlocked ? <PlayArrow /> : <Lock />}
+                        disabled={!unlocked}
+                        onClick={() => navigate(`/lesson/${lesson.id}`)}
+                      >
+                        {unlocked ? 'Start Lesson' : 'Locked'}
+                      </Button>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+            );
+          })}
+        </Grid>
+      </Box>
     </Box>
   );
 };
 
 export default LessonsPage;
+

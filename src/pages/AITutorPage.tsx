@@ -13,7 +13,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useNotification } from '../core/NotificationContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProgress } from '../core/ProgressContext';
 import { useMissions } from '../core/MissionContext';
 import {
@@ -25,6 +25,7 @@ import {
   type AiTutorResponse,
 } from '../core/api';
 import { playClick } from '../core/sounds';
+import { markRemediationPlanDone } from '../core/masteryEngine';
 
 type Scenario = 'daily' | 'travel' | 'work' | 'migration';
 type Proficiency = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
@@ -86,10 +87,12 @@ function parseCorrection(text: string) {
 
 const AITutorPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [scenario, setScenario] = useState<Scenario>('travel');
   const [proficiency, setProficiency] = useState<Proficiency>('A2');
   const [message, setMessage] = useState('I go airport tomorrow');
+  const [remediationResolved, setRemediationResolved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [xpNotice, setXpNotice] = useState('');
@@ -111,6 +114,19 @@ const AITutorPage = () => {
       setError('');
     }
   }, [error, notify]);
+
+  useEffect(() => {
+    const seededScenario = searchParams.get('scenario');
+    const seededMessage = searchParams.get('message');
+    const supportedScenarios: Scenario[] = ['daily', 'travel', 'work', 'migration'];
+
+    if (seededScenario && supportedScenarios.includes(seededScenario as Scenario)) {
+      setScenario(seededScenario as Scenario);
+    }
+    if (seededMessage) {
+      setMessage(seededMessage);
+    }
+  }, [searchParams]);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [dailyCap, setDailyCap] = useState(120);
   const [awardedToday, setAwardedToday] = useState(0);
@@ -130,6 +146,7 @@ const AITutorPage = () => {
   const tutorParts = useMemo(() => parseStructuredLines(result?.tutorReply || ''), [result]);
   const correctionParts = useMemo(() => parseCorrection(result?.correctionAr || ''), [result]);
   const dailyCapReached = remainingToday <= 0 || awardedToday >= dailyCap;
+  const remediationPlanId = searchParams.get('remediationPlanId') || '';
 
   const emitEvent = (eventName: 'ai_tutor_submitted' | 'ai_tutor_success' | 'ai_tutor_retry' | 'ai_tutor_cooldown_hit' | 'ai_tutor_daily_cap_hit', metadata: Record<string, unknown> = {}) => {
     void trackAnalyticsEvent({
@@ -216,7 +233,6 @@ const AITutorPage = () => {
         };
         return [entry, ...prev].slice(0, 5);
       });
-
       // complete AI tutor mission if exists
       const m3 = missions.find(m => m.id === 'm3');
       if (m3 && !m3.completed) {
@@ -228,6 +244,11 @@ const AITutorPage = () => {
       if (response.safety.blocked) {
         setXpNotice('تم تقديم التصحيح، لكن لا يمكن منح XP لهذه المحاولة بسبب فحص الأمان.');
         return;
+      }
+
+      if (remediationPlanId && !remediationResolved) {
+        markRemediationPlanDone(remediationPlanId);
+        setRemediationResolved(true);
       }
 
       if (xpBlockedByCooldown) {
@@ -332,6 +353,16 @@ const AITutorPage = () => {
           📶 <strong>ملاحظة:</strong> إذا ظهرت رسالة "المدرس الذكي غير متاح مؤقتًا"، يرجى تفعيل <strong>OpenAI API Billing</strong> في حسابك على <a href="https://platform.openai.com/account/billing" target="_blank" rel="noopener noreferrer" style={{color: '#0B4B88', fontWeight: 'bold'}}>OpenAI Platform</a>. قد يستغرق التفعيل 1-2 ساعة.
         </Alert>
 
+        {remediationPlanId && !remediationResolved && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            Recovery mode is active for this session. Complete one focused attempt to resolve the remediation plan.
+          </Alert>
+        )}
+        {remediationPlanId && remediationResolved && (
+          <Alert severity="success" sx={{ mb: 3 }}>
+            Recovery plan completed successfully. You can continue with normal AI tutor practice.
+          </Alert>
+        )}
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Grid container spacing={2}>
@@ -559,3 +590,4 @@ const AITutorPage = () => {
 };
 
 export default AITutorPage;
+

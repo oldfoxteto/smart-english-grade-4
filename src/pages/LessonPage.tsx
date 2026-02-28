@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -25,10 +25,12 @@ import {
 } from '@mui/icons-material';
 import { 
   getA1LessonById, 
+  getAllA1Lessons,
   type A1Lesson, 
   type Exercise 
 } from '../core/a1Content';
 import { playSuccess, playClick } from '../core/sounds';
+import { getNextRecommendedLesson, recordLessonAttempt, type MasterySkill, type RemediationPlan } from '../core/masteryEngine';
 
 const LessonPage = () => {
   const navigate = useNavigate();
@@ -41,6 +43,13 @@ const LessonPage = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | number>>({});
   const [showResult, setShowResult] = useState(false);
   const [exerciseResults, setExerciseResults] = useState<Record<string, boolean>>({});
+  const [lessonScore, setLessonScore] = useState<number | null>(null);
+  const [lessonMastery, setLessonMastery] = useState<number | null>(null);
+  const [nextLessonId, setNextLessonId] = useState<string | null>(null);
+  const [remediationPlan, setRemediationPlan] = useState<RemediationPlan | null>(null);
+
+  const allLessons = useMemo(() => getAllA1Lessons(), []);
+  const lessonById = useMemo(() => new Map(allLessons.map((item) => [item.id, item])), [allLessons]);
 
   useEffect(() => {
     if (lessonId) {
@@ -72,6 +81,16 @@ const LessonPage = () => {
     return userAnswer === exercise.correctAnswer;
   };
 
+  const getExerciseSkill = (exercise: Exercise): MasterySkill => {
+    if (!lesson) return 'vocabulary';
+    if (exercise.type === 'speaking') return 'speaking';
+    if (lesson.category === 'reading') return 'reading';
+    if (lesson.category === 'listening') return 'listening';
+    if (lesson.category === 'speaking') return 'speaking';
+    if (lesson.category === 'grammar') return 'grammar';
+    return 'vocabulary';
+  };
+
   const handleSubmitExercises = () => {
     if (!lesson?.exercises) return;
 
@@ -84,6 +103,22 @@ const LessonPage = () => {
     
     // Play sound based on correctness
     const correctCount = Object.values(results).filter(r => r).length;
+    const weakSkills = lesson.exercises
+      .filter((exercise) => !results[exercise.id])
+      .map((exercise) => getExerciseSkill(exercise));
+    const masteryUpdate = recordLessonAttempt({
+      lessonId: lesson.id,
+      lessonCategory: lesson.category,
+      totalExercises: lesson.exercises.length,
+      correctExercises: correctCount,
+      weakSkills,
+    });
+    const recommendedLesson = getNextRecommendedLesson(allLessons);
+    setLessonScore(masteryUpdate.scorePercent);
+    setLessonMastery(masteryUpdate.lessonMastery);
+    setRemediationPlan(masteryUpdate.activeRemediationPlan);
+    setNextLessonId(recommendedLesson?.id || null);
+
     if (correctCount === lesson.exercises.length) {
       playSuccess();
     }
@@ -102,6 +137,10 @@ const LessonPage = () => {
     setSelectedAnswers({});
     setExerciseResults({});
     setShowResult(false);
+    setLessonScore(null);
+    setLessonMastery(null);
+    setNextLessonId(null);
+    setRemediationPlan(null);
   };
 
   const getStepIcon = (step: number) => {
@@ -474,6 +513,35 @@ const LessonPage = () => {
                   </Button>
                 ) : (
                   <>
+                    <Box sx={{ width: '100%' }}>
+                      <Alert severity={lessonScore !== null && lessonScore >= 70 ? 'success' : 'warning'} sx={{ mb: 2 }}>
+                        Lesson score: <strong>{lessonScore ?? 0}%</strong> | Mastery: <strong>{lessonMastery ?? 0}%</strong>
+                      </Alert>
+                      {remediationPlan && (
+                        <Alert
+                          severity="info"
+                          sx={{ mb: 2 }}
+                          action={
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => {
+                                const query = new URLSearchParams({
+                                  scenario: remediationPlan.aiScenario,
+                                  message: remediationPlan.aiPrompt,
+                                  remediationPlanId: remediationPlan.id,
+                                });
+                                navigate(`/ai-tutor?${query.toString()}`);
+                              }}
+                            >
+                              Start AI Recovery
+                            </Button>
+                          }
+                        >
+                          {remediationPlan.title} - {remediationPlan.reason}
+                        </Alert>
+                      )}
+                    </Box>
                     <Button
                       variant="outlined"
                       size="large"
@@ -485,14 +553,20 @@ const LessonPage = () => {
                     <Button
                       variant="contained"
                       size="large"
-                      onClick={() => navigate('/home')}
+                      onClick={() => {
+                        if (nextLessonId && lessonById.has(nextLessonId)) {
+                          navigate(`/lesson/${nextLessonId}`);
+                          return;
+                        }
+                        navigate('/home');
+                      }}
                       sx={{
                         background: 'linear-gradient(135deg, #4CAF50, #66BB6A)',
                         px: 4,
                       }}
                     >
                       <PlayArrow sx={{ mr: 1 }} />
-                      إنهاء الدرس
+                      {nextLessonId && lessonById.has(nextLessonId) ? 'Start Next Lesson' : 'Finish Lesson'}
                     </Button>
                   </>
                 )}
@@ -506,3 +580,4 @@ const LessonPage = () => {
 };
 
 export default LessonPage;
+
