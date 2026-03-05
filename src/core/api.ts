@@ -469,6 +469,16 @@ export async function askAiTutor(payload: {
   langCode?: string;
   imageBase64?: string;
 }): Promise<AiTutorResponse> {
+  const rawMessage = payload.userMessage || payload.message || '';
+  const mappedScenario: 'daily' | 'travel' | 'work' | 'migration' =
+    payload.scenario === 'airport' || payload.scenario === 'restaurant'
+      ? 'travel'
+      : payload.scenario === 'shopping' || payload.scenario === 'free'
+        ? 'daily'
+      : payload.scenario === 'vision'
+          ? 'daily'
+          : (payload.scenario as 'daily' | 'travel' | 'work' | 'migration');
+
   return apiRequest<{
     reply: string;
     correction: string | null;
@@ -476,8 +486,11 @@ export async function askAiTutor(payload: {
   }>('/ai/tutor/reply', {
     method: 'POST',
     body: JSON.stringify({
-      userMessage: payload.userMessage || payload.message || '',
-      scenario: payload.scenario,
+      message: rawMessage,
+      userMessage: rawMessage,
+      scenario: mappedScenario,
+      scenarioRaw: payload.scenario,
+      proficiency: payload.proficiency || 'A1',
       langCode: payload.langCode || 'en-US',
       history: payload.history || [],
       imageBase64: payload.imageBase64,

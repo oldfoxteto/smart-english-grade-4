@@ -34,7 +34,9 @@ describe('askAiTutor', () => {
 
     const body = JSON.parse(String((init as RequestInit).body));
     expect(body.userMessage).toBe('he go to school');
-    expect(body.scenario).toBe('free');
+    expect(body.scenario).toBe('daily');
+    expect(body.scenarioRaw).toBe('free');
+    expect(body.message).toBe('he go to school');
     expect(body.langCode).toBe('en-US');
 
     expect(response.reply).toBe('Short tutor reply');
