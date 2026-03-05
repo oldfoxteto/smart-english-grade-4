@@ -16,7 +16,7 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/lisan-backend:${BACKEND_IMAGE_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-oldfoxteto}/lisan-backend:${BACKEND_IMAGE_TAG:-latest}
     container_name: lisan-backend-prod
     restart: always
     env_file:

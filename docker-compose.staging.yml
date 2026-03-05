@@ -17,7 +17,7 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/lisan-backend:${BACKEND_IMAGE_TAG:-staging}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-oldfoxteto}/lisan-backend:${BACKEND_IMAGE_TAG:-staging}
     container_name: lisan-backend-staging
     env_file:
       - backend/.env.staging
