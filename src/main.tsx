@@ -5,6 +5,9 @@ import App from './App.tsx';
 import { ProgressProvider } from './core/ProgressContext';
 import { MissionProvider } from './core/MissionContext';
 import { NotificationProvider } from './core/NotificationContext';
+import { initSentry } from './core/sentry';
+
+initSentry();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

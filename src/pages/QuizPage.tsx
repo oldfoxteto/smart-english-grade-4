@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import confetti from 'canvas-confetti';
 import {
   Box,
   Typography,
@@ -61,7 +62,15 @@ const QuizPage = () => {
         setTimeLeft(20);
       } else {
         addQuizScore(newScore, questions.length);
-        if (newScore / questions.length >= 0.5) playSuccess();
+        if (newScore / questions.length >= 0.5) {
+          playSuccess();
+          confetti({
+            particleCount: newScore === questions.length ? 150 : 80,
+            spread: newScore === questions.length ? 80 : 50,
+            origin: { y: 0.6 },
+            colors: ['#FF9800', '#4CAF50', '#FFC107', '#2196F3']
+          });
+        }
         setPhase('result');
       }
     }, 1500);

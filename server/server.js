@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -6,443 +7,1222 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { OpenAI } = require('openai');
 require('dotenv').config();
 
-// Initialize Express app
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+const PORT = process.env.PORT || 4000;
+const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
+
+// ---------------------------------------------------------------------------
+// DB setup (SQLite)
+// ---------------------------------------------------------------------------
+const db = new sqlite3.Database(DB_FILE);
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    passwordHash TEXT NOT NULL,
+    displayName TEXT,
+    createdAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS progress (
+    userId TEXT PRIMARY KEY,
+    stars INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 1,
+    vocabCompleted TEXT DEFAULT '[]',
+    grammarCompleted TEXT DEFAULT '[]',
+    storiesCompleted TEXT DEFAULT '[]',
+    quizScores TEXT DEFAULT '[]',
+    updatedAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS srs_items (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    itemType TEXT NOT NULL,
+    level INTEGER,
+    nextReviewAt TEXT,
+    easeFactor REAL,
+    interval INTEGER,
+    history TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS analytics_events (
+    id TEXT PRIMARY KEY,
+    userId TEXT,
+    eventName TEXT NOT NULL,
+    source TEXT,
+    scenario TEXT,
+    metadata TEXT,
+    createdAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS request_metrics (
+    id TEXT PRIMARY KEY,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    statusCode INTEGER NOT NULL,
+    latencyMs INTEGER NOT NULL,
+    retryCount INTEGER DEFAULT 0,
+    circuitOpenCount INTEGER DEFAULT 0,
+    errorCount INTEGER DEFAULT 0,
+    createdAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS safety_consents (
+    userId TEXT PRIMARY KEY,
+    allowVision INTEGER DEFAULT 0,
+    guardianName TEXT,
+    policyVersion TEXT,
+    updatedAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS lesson_progress (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    lessonId TEXT NOT NULL,
+    masteryScore REAL DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    updatedAt TEXT,
+    UNIQUE(userId, lessonId)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS content_cache (
+    cacheKey TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    createdAt TEXT
+  )`);
+});
+
+// Helpers
+const nowIso = () => new Date().toISOString();
+const generateId = () => Math.random().toString(36).slice(2, 10);
+const parseJSON = (value, fallback) => {
+  try { return JSON.parse(value); } catch { return fallback; }
+};
+const policyVersion = '2026-03-child-safe-v1';
+const safetyPolicy = {
+  version: policyVersion,
+  title: 'Child Vision Safety Policy',
+  summary: 'Vision mode accepts object-only photos after guardian consent.',
+  rules: [
+    'No faces or people in frame.',
+    'No IDs, cards, documents, addresses, phone numbers, or private screens.',
+    'Images may be analyzed by AI moderation before tutoring reply.',
+    'Vision is disabled by default and requires guardian name + consent.',
+  ],
+};
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+  });
+}
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+  });
+}
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function onRun(err) {
+      if (err) return reject(err);
+      resolve(this);
+    });
+  });
+}
+
+const PLACEMENT_TESTS = {
+  en: {
+    id: 'placement-en-v1',
+    title: 'English Placement Test',
+    languageCode: 'en',
+    totalQuestions: 5,
+    version: 1,
+    questions: [
+      {
+        id: 'q1',
+        prompt: 'Choose the correct sentence.',
+        sort_order: 1,
+        options: [
+          { id: 'q1o1', optionText: 'She go to school every day.', sortOrder: 1 },
+          { id: 'q1o2', optionText: 'She goes to school every day.', sortOrder: 2 },
+          { id: 'q1o3', optionText: 'She going to school every day.', sortOrder: 3 },
+        ],
+        answer: 'q1o2',
+      },
+      {
+        id: 'q2',
+        prompt: 'What is the plural of "child"?',
+        sort_order: 2,
+        options: [
+          { id: 'q2o1', optionText: 'childs', sortOrder: 1 },
+          { id: 'q2o2', optionText: 'children', sortOrder: 2 },
+          { id: 'q2o3', optionText: 'childes', sortOrder: 3 },
+        ],
+        answer: 'q2o2',
+      },
+      {
+        id: 'q3',
+        prompt: 'Choose the best response: "How are you?"',
+        sort_order: 3,
+        options: [
+          { id: 'q3o1', optionText: 'I am fine, thank you.', sortOrder: 1 },
+          { id: 'q3o2', optionText: 'I am ten years old.', sortOrder: 2 },
+          { id: 'q3o3', optionText: 'My name is Ali.', sortOrder: 3 },
+        ],
+        answer: 'q3o1',
+      },
+      {
+        id: 'q4',
+        prompt: 'Complete: "There ___ two apples on the table."',
+        sort_order: 4,
+        options: [
+          { id: 'q4o1', optionText: 'is', sortOrder: 1 },
+          { id: 'q4o2', optionText: 'are', sortOrder: 2 },
+          { id: 'q4o3', optionText: 'am', sortOrder: 3 },
+        ],
+        answer: 'q4o2',
+      },
+      {
+        id: 'q5',
+        prompt: 'Choose the correct preposition: "I am good ___ English."',
+        sort_order: 5,
+        options: [
+          { id: 'q5o1', optionText: 'in', sortOrder: 1 },
+          { id: 'q5o2', optionText: 'at', sortOrder: 2 },
+          { id: 'q5o3', optionText: 'on', sortOrder: 3 },
+        ],
+        answer: 'q5o2',
+      },
+    ],
+  },
+};
+
+function scoreToCefr(scorePercent) {
+  if (scorePercent >= 90) return 'B2';
+  if (scorePercent >= 75) return 'B1';
+  if (scorePercent >= 55) return 'A2';
+  return 'A1';
+}
+
+function signTokens(userId) {
+  const token = jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: '1h' });
+  const refreshToken = jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: '7d' });
+  return { token, refreshToken };
+}
+
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'UNAUTHENTICATED' });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.userId = payload.sub;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'INVALID_TOKEN' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Express app
+// ---------------------------------------------------------------------------
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5174",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: CLIENT_URLS, methods: ['GET', 'POST'] }
 });
 
-// Middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:"],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'", "ws:", "wss:"]
-    }
-  }
-}));
-
+app.use(helmet());
 app.use(compression());
-app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5174",
-  credentials: true
-}));
-
+app.use(cors({ origin: CLIENT_URLS, credentials: true }));
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
+// Request-level metrics for ops dashboard
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    if (!req.path.startsWith('/api/v1')) return;
+    const latencyMs = Date.now() - startedAt;
+    const statusCode = res.statusCode;
+    const errorCount = statusCode >= 500 ? 1 : 0;
+    db.run(
+      `INSERT INTO request_metrics (id, method, path, statusCode, latencyMs, retryCount, circuitOpenCount, errorCount, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [generateId(), req.method, req.path, statusCode, latencyMs, 0, 0, errorCount, nowIso()]
+    );
+  });
+  next();
+});
+
+// Rate limit for API
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    error: 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً'
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+});
+app.use('/api/v1/', limiter);
+
+// ---------------------------------------------------------------------------
+// Auth routes
+// ---------------------------------------------------------------------------
+app.post('/api/v1/auth/register', (req, res) => {
+  const { email, password, displayName } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+
+  const id = generateId();
+  const hash = bcrypt.hashSync(password, 10);
+  const createdAt = nowIso();
+
+  db.run(
+    `INSERT INTO users (id, email, passwordHash, displayName, createdAt) VALUES (?,?,?,?,?)`,
+    [id, email.toLowerCase(), hash, displayName || 'Learner', createdAt],
+    function (err) {
+      if (err) {
+        if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'EMAIL_EXISTS' });
+        return res.status(500).json({ error: 'DB_ERROR' });
+      }
+      db.run(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
+      const tokens = signTokens(id);
+      res.json({ user: { id, email, displayName: displayName || 'Learner', status: 'active', roles: ['user'] }, ...tokens });
+    }
+  );
+});
+
+app.post('/api/v1/auth/login', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+
+  db.get(`SELECT * FROM users WHERE email = ?`, [email.toLowerCase()], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!row || !bcrypt.compareSync(password, row.passwordHash)) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
+    }
+    const tokens = signTokens(row.id);
+    res.json({ user: { id: row.id, email: row.email, displayName: row.displayName, status: 'active', roles: ['user'] }, ...tokens });
+  });
+});
+
+app.post('/api/v1/auth/refresh', (req, res) => {
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) return res.status(400).json({ error: 'REFRESH_REQUIRED' });
+  try {
+    const payload = jwt.verify(refreshToken, JWT_SECRET);
+    if (payload.type !== 'refresh') throw new Error('bad token');
+    const tokens = signTokens(payload.sub);
+    return res.json(tokens);
+  } catch {
+    return res.status(401).json({ error: 'INVALID_REFRESH' });
   }
 });
-app.use('/api/', limiter);
 
-// Static files
-app.use('/uploads', express.static('uploads'));
-
-// In-memory database (for demo purposes)
-const users = [];
-const lessons = [];
-const exercises = [];
-const progress = [];
-const achievements = [];
-
-// Utility functions
-const generateId = () => Math.random().toString(36).substr(2, 9);
-const createResponse = (success, data, message = '') => ({
-  success,
-  data,
-  message,
-  timestamp: new Date().toISOString()
+// ---------------------------------------------------------------------------
+// AI tutor proxy + content generation + safety consent
+// ---------------------------------------------------------------------------
+app.get('/api/v1/safety/policy', (_req, res) => {
+  res.json(safetyPolicy);
 });
 
-// Mock data
-const createMockData = () => {
-  // Mock user
-  const mockUser = {
-    id: generateId(),
-    username: 'student1',
-    email: 'student@example.com',
-    role: 'student',
-    firstName: 'أحمد',
-    lastName: 'محمد',
-    profile: {
-      bio: 'طالب في الصف الرابع',
-      grade: '4'
-    },
-    preferences: {
-      language: 'ar',
-      theme: 'light',
-      notifications: true
-    },
-    createdAt: new Date().toISOString()
-  };
-  users.push(mockUser);
+app.get('/api/v1/safety/consent', authMiddleware, async (req, res) => {
+  try {
+    const row = await dbGet(`SELECT * FROM safety_consents WHERE userId = ?`, [req.userId]);
+    res.json({
+      allowVision: Boolean(row?.allowVision),
+      guardianName: row?.guardianName || '',
+      policyVersion: row?.policyVersion || policyVersion,
+      updatedAt: row?.updatedAt || null,
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
 
-  // Mock lessons
-  const mockLessons = [
-    {
-      id: generateId(),
-      title: 'الدرس الأول: التحيات',
-      description: 'تعلم كيفية التحية باللغة الإنجليزية',
-      grade: '4',
-      subject: 'english',
-      difficulty: 'easy',
-      status: 'published',
-      content: {
-        vocabulary: ['hello', 'good morning', 'good evening', 'good night'],
-        phrases: ['How are you?', 'I am fine', 'Thank you'],
-        exercises: ['match-words', 'fill-blanks', 'pronunciation']
-      },
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: generateId(),
-      title: 'الدرس الثاني: الأرقام',
-      description: 'تعلم الأرقام من 1 إلى 10',
-      grade: '4',
-      subject: 'english',
-      difficulty: 'easy',
-      status: 'published',
-      content: {
-        vocabulary: ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'],
-        phrases: ['I have one book', 'There are three apples'],
-        exercises: ['counting', 'matching', 'writing']
-      },
-      createdAt: new Date().toISOString()
+app.post('/api/v1/safety/consent', authMiddleware, async (req, res) => {
+  const allowVision = req.body?.allowVision ? 1 : 0;
+  const guardianName = String(req.body?.guardianName || '').slice(0, 120);
+  const updatedAt = nowIso();
+  try {
+    await dbRun(
+      `INSERT INTO safety_consents (userId, allowVision, guardianName, policyVersion, updatedAt)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(userId) DO UPDATE SET
+         allowVision=excluded.allowVision,
+         guardianName=excluded.guardianName,
+         policyVersion=excluded.policyVersion,
+         updatedAt=excluded.updatedAt`,
+      [req.userId, allowVision, guardianName, policyVersion, updatedAt]
+    );
+    res.json({ ok: true, allowVision: Boolean(allowVision), updatedAt, policyVersion });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.post('/api/v1/ai/tutor/reply', authMiddleware, async (req, res) => {
+  const {
+    history = [],
+    userMessage = '',
+    langCode = 'en-US',
+    scenario = 'free',
+    imageBase64,
+  } = req.body || {};
+
+  const safeBlocked = { blocked: false, reason: null };
+  try {
+    if (imageBase64) {
+      const consent = await dbGet(`SELECT allowVision FROM safety_consents WHERE userId = ?`, [req.userId]);
+      if (!consent?.allowVision) {
+        return res.json({
+          reply: 'Vision mode is locked until guardian consent is enabled in Safety Settings.',
+          correction: null,
+          safety: { blocked: true, reason: 'NO_GUARDIAN_CONSENT' },
+        });
+      }
+
+      const normalizedImage = String(imageBase64).trim();
+      const estimatedBytes = Math.round((normalizedImage.length * 3) / 4);
+      if (estimatedBytes > 3_000_000) {
+        return res.json({
+          reply: 'Image is too large. Please capture a closer object photo.',
+          correction: null,
+          safety: { blocked: true, reason: 'IMAGE_TOO_LARGE' },
+        });
+      }
+
+      // If safety scanner is unavailable, fail closed for child accounts.
+      if (!openai) {
+        return res.json({
+          reply: 'Vision mode is temporarily unavailable. Please try text chat now.',
+          correction: null,
+          safety: { blocked: true, reason: 'SAFETY_SCANNER_UNAVAILABLE' },
+        });
+      }
+
+      // Image safety scan: detect face/PII-like content by model policy prompt.
+      const safetyCheck = await openai.responses.create({
+        model: 'gpt-4o-mini',
+        input: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text:
+                  'Return strict JSON only: {"safe":boolean,"reason":string}. Mark unsafe if image has person/face, IDs, documents, address, phone, email, plates, screens, or private info.',
+              },
+              { type: 'input_image', image_url: normalizedImage },
+            ],
+          },
+        ],
+      });
+      const raw = safetyCheck.output_text || '{"safe":false,"reason":"UNKNOWN"}';
+      const cleaned = raw.substring(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+      const parsed = parseJSON(cleaned, { safe: false, reason: 'SAFETY_PARSE_FAILED' });
+      if (!parsed.safe) {
+        return res.json({
+          reply: 'I cannot analyze this image for child safety reasons. Please capture an object-only photo.',
+          correction: null,
+          safety: { blocked: true, reason: parsed.reason || 'UNSAFE_IMAGE' },
+        });
+      }
     }
-  ];
-  lessons.push(...mockLessons);
 
-  // Mock exercises
-  const mockExercises = [
-    {
-      id: generateId(),
-      lessonId: mockLessons[0].id,
-      title: 'مطابقة الكلمات',
-      type: 'matching',
-      difficulty: 'easy',
-      questions: [
+    if (!openai) {
+      return res.json({
+        reply: imageBase64
+          ? 'I can see the image, but AI proxy is offline right now.'
+          : "Great! Let's practice more. Tell me another sentence.",
+        correction: null,
+        safety: safeBlocked,
+      });
+    }
+
+    const system = `You are LISAN, a child-safe English tutor.
+Scenario: ${scenario}
+Language mode: ${langCode}
+Rules:
+- Keep response very short (max 2 sentences).
+- If student English grammar has a mistake, add exactly one line: [CORRECTION: ...]
+- No markdown.`;
+
+    const compactHistory = Array.isArray(history) ? history.slice(-8) : [];
+    const textPayload = compactHistory.map((m) => `${m.role === 'bot' ? 'Tutor' : 'Student'}: ${m.text}`).join('\n');
+    const userText = String(userMessage || '').slice(0, 1000);
+
+    const response = await openai.responses.create({
+      model: 'gpt-4o-mini',
+      input: [
         {
-          id: generateId(),
-          question: 'مرحباً',
-          options: ['hello', 'goodbye', 'thank you'],
-          correctAnswer: 'hello'
+          role: 'system',
+          content: [{ type: 'input_text', text: system }],
         },
         {
-          id: generateId(),
-          question: 'صباح الخير',
-          options: ['good night', 'good morning', 'good evening'],
-          correctAnswer: 'good morning'
-        }
+          role: 'user',
+          content: [
+            { type: 'input_text', text: `${textPayload}\nStudent: ${userText}` },
+            ...(imageBase64 ? [{ type: 'input_image', image_url: imageBase64 }] : []),
+          ],
+        },
       ],
-      createdAt: new Date().toISOString()
+    });
+
+    let reply = response.output_text || "Let's keep learning together.";
+    let correction = null;
+    const match = reply.match(/\[CORRECTION:\s*(.+?)\]/i);
+    if (match) {
+      correction = match[1];
+      reply = reply.replace(/\[CORRECTION:\s*.+?\]/ig, '').trim();
     }
-  ];
-  exercises.push(...mockExercises);
-};
 
-// Initialize mock data
-createMockData();
-
-// Routes
-app.get('/api/health', (req, res) => {
-  res.json(createResponse(true, { 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  }));
-});
-
-app.get('/api/version', (req, res) => {
-  res.json(createResponse(true, { version: '1.0.0' }));
-});
-
-// Auth routes
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  
-  // Mock authentication
-  const user = users.find(u => u.email === email);
-  if (user && password === 'password') {
-    const token = 'mock-jwt-token-' + generateId();
-    const refreshToken = 'mock-refresh-token-' + generateId();
-    
-    res.json(createResponse(true, {
-      user,
-      token,
-      refreshToken,
-      expiresIn: 3600
-    }, 'تم تسجيل الدخول بنجاح'));
-  } else {
-    res.status(401).json(createResponse(false, null, 'البريد الإلكتروني أو كلمة المرور غير صحيحة'));
+    res.json({ reply, correction, safety: safeBlocked });
+  } catch (error) {
+    console.error('ai/tutor/reply error', error?.message || error);
+    res.status(500).json({ error: 'AI_PROXY_FAILED' });
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
-  const { username, email, password, firstName, lastName } = req.body;
-  
-  // Check if user already exists
-  if (users.find(u => u.email === email)) {
-    return res.status(400).json(createResponse(false, null, 'البريد الإلكتروني مسجل بالفعل'));
+app.post('/api/v1/content/generate', authMiddleware, async (req, res) => {
+  const topic = String(req.body?.topic || 'daily life').slice(0, 120);
+  const level = String(req.body?.level || 'A1').slice(0, 10);
+  const mode = String(req.body?.mode || 'story').slice(0, 20);
+  const cacheKey = `${mode}:${level}:${topic}`.toLowerCase();
+
+  try {
+    const cached = await dbGet(`SELECT content FROM content_cache WHERE cacheKey = ?`, [cacheKey]);
+    if (cached?.content) {
+      return res.json({ cached: true, content: parseJSON(cached.content, { text: cached.content }) });
+    }
+
+    if (!openai) {
+      const fallback = { text: `Topic: ${topic}. Practice simple ${level} ${mode} tasks.` };
+      await dbRun(`INSERT OR REPLACE INTO content_cache (cacheKey, content, createdAt) VALUES (?, ?, ?)`, [cacheKey, JSON.stringify(fallback), nowIso()]);
+      return res.json({ cached: false, content: fallback });
+    }
+
+    const out = await openai.responses.create({
+      model: 'gpt-4o-mini',
+      input: `Generate child-safe English ${mode} content at ${level} about "${topic}". Return compact JSON with fields: title,text,questions[].`,
+    });
+    const content = parseJSON(out.output_text || '{}', { text: out.output_text || '' });
+    await dbRun(`INSERT OR REPLACE INTO content_cache (cacheKey, content, createdAt) VALUES (?, ?, ?)`, [cacheKey, JSON.stringify(content), nowIso()]);
+    return res.json({ cached: false, content });
+  } catch (error) {
+    console.error('content/generate error', error?.message || error);
+    res.status(500).json({ error: 'CONTENT_GENERATION_FAILED' });
   }
-  
-  const newUser = {
-    id: generateId(),
-    username,
-    email,
-    role: 'student',
-    firstName,
-    lastName,
-    profile: {
-      bio: '',
-      grade: '4'
+});
+
+// ---------------------------------------------------------------------------
+// Placement + Learning path routes
+// ---------------------------------------------------------------------------
+app.get('/api/v1/placement/tests/:languageCode', authMiddleware, (req, res) => {
+  const languageCode = String(req.params.languageCode || 'en').toLowerCase();
+  const test = PLACEMENT_TESTS[languageCode] || PLACEMENT_TESTS.en;
+  const safeQuestions = test.questions.map(({ answer, ...q }) => q);
+  res.json({
+    test: {
+      id: test.id,
+      title: test.title,
+      languageCode: test.languageCode,
+      totalQuestions: test.totalQuestions,
+      version: test.version,
+      questions: safeQuestions,
     },
-    preferences: {
-      language: 'ar',
-      theme: 'light',
-      notifications: true
-    },
-    createdAt: new Date().toISOString()
-  };
-  
-  users.push(newUser);
-  
-  const token = 'mock-jwt-token-' + generateId();
-  const refreshToken = 'mock-refresh-token-' + generateId();
-  
-  res.json(createResponse(true, {
-    user: newUser,
-    token,
-    refreshToken,
-    expiresIn: 3600
-  }, 'تم إنشاء الحساب بنجاح'));
+  });
 });
 
-app.get('/api/auth/profile', (req, res) => {
-  // Mock user profile
-  const user = users[0]; // Return first user for demo
-  res.json(createResponse(true, user));
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  res.json(createResponse(true, null, 'تم تسجيل الخروج بنجاح'));
-});
-
-// Lessons routes
-app.get('/api/lessons', (req, res) => {
-  const { grade, subject } = req.query;
-  let filteredLessons = lessons;
-  
-  if (grade) {
-    filteredLessons = filteredLessons.filter(l => l.grade === grade);
-  }
-  if (subject) {
-    filteredLessons = filteredLessons.filter(l => l.subject === subject);
-  }
-  
-  res.json(createResponse(true, filteredLessons));
-});
-
-app.get('/api/lessons/:id', (req, res) => {
-  const lesson = lessons.find(l => l.id === req.params.id);
-  if (lesson) {
-    res.json(createResponse(true, lesson));
-  } else {
-    res.status(404).json(createResponse(false, null, 'الدرس غير موجود'));
-  }
-});
-
-// Exercises routes
-app.get('/api/exercises', (req, res) => {
-  const { lessonId, type } = req.query;
-  let filteredExercises = exercises;
-  
-  if (lessonId) {
-    filteredExercises = filteredExercises.filter(e => e.lessonId === lessonId);
-  }
-  if (type) {
-    filteredExercises = filteredExercises.filter(e => e.type === type);
-  }
-  
-  res.json(createResponse(true, filteredExercises));
-});
-
-app.get('/api/exercises/:id', (req, res) => {
-  const exercise = exercises.find(e => e.id === req.params.id);
-  if (exercise) {
-    res.json(createResponse(true, exercise));
-  } else {
-    res.status(404).json(createResponse(false, null, 'التمرين غير موجود'));
-  }
-});
-
-app.post('/api/exercises/:id/submit', (req, res) => {
-  const { answers } = req.body;
-  const exercise = exercises.find(e => e.id === req.params.id);
-  
-  if (!exercise) {
-    return res.status(404).json(createResponse(false, null, 'التمرين غير موجود'));
-  }
-  
-  // Calculate score
+app.post('/api/v1/placement/submit', authMiddleware, (req, res) => {
+  const { testId, answers } = req.body || {};
+  const test = Object.values(PLACEMENT_TESTS).find((t) => t.id === testId) || PLACEMENT_TESTS.en;
+  const answerMap = new Map((answers || []).map((a) => [a.questionId, a.optionId]));
   let correct = 0;
-  const results = exercise.questions.map((question, index) => {
-    const userAnswer = answers[index];
-    const isCorrect = userAnswer === question.correctAnswer;
-    if (isCorrect) correct++;
-    
-    return {
-      questionId: question.id,
-      userAnswer,
-      correctAnswer: question.correctAnswer,
-      isCorrect
-    };
-  });
-  
-  const score = Math.round((correct / exercise.questions.length) * 100);
-  
-  const result = {
-    exerciseId: exercise.id,
-    score,
-    totalQuestions: exercise.questions.length,
-    correctAnswers: correct,
-    results,
-    completedAt: new Date().toISOString()
-  };
-  
-  res.json(createResponse(true, result, 'تم إرسال الإجابات بنجاح'));
-});
-
-// Progress routes
-app.get('/api/progress/student/:id', (req, res) => {
-  const studentProgress = [
-    {
-      id: generateId(),
-      studentId: req.params.id,
-      lessonId: lessons[0].id,
-      score: 85,
-      completedAt: new Date().toISOString(),
-      timeSpent: 1200 // seconds
+  for (const q of test.questions) {
+    if (answerMap.get(q.id) === q.answer) correct += 1;
+  }
+  const total = test.questions.length || 1;
+  const scorePercent = Math.round((correct / total) * 100);
+  const estimatedCefr = scoreToCefr(scorePercent);
+  res.json({
+    placementResult: {
+      estimatedCefr,
+      scorePercent,
     },
-    {
-      id: generateId(),
-      studentId: req.params.id,
-      lessonId: lessons[1].id,
-      score: 92,
-      completedAt: new Date().toISOString(),
-      timeSpent: 900 // seconds
+  });
+});
+
+app.get('/api/v1/learning-path', authMiddleware, (req, res) => {
+  const languageCode = String(req.query.languageCode || 'en');
+  const goalType = String(req.query.goalType || 'daily');
+  const mockCefr = 'A1';
+  const track = goalType === 'travel' ? 'travel_core' : goalType === 'work' ? 'work_core' : 'daily_core';
+  res.json({
+    userId: req.userId,
+    languageCode,
+    goalType,
+    cefr: mockCefr,
+    recommendedTrackCodes: [track],
+    lessons: [
+      {
+        track_code: track,
+        track_name: 'Core Track',
+        unit_title: 'Starter Unit',
+        lesson_id: 'lesson-hello-1',
+        lesson_title: 'Greetings and Introductions',
+        lesson_type: 'dialogue',
+        est_minutes: 10,
+      },
+      {
+        track_code: track,
+        track_name: 'Core Track',
+        unit_title: 'Starter Unit',
+        lesson_id: 'lesson-daily-1',
+        lesson_title: 'Daily Routine Basics',
+        lesson_type: 'practice',
+        est_minutes: 12,
+      },
+    ],
+  });
+});
+
+app.get('/api/v1/lessons/:lessonId/content', authMiddleware, (req, res) => {
+  const lessonId = String(req.params.lessonId);
+  res.json({
+    lesson: {
+      lessonId,
+      lessonTitle: 'Sample Lesson',
+      lessonType: 'practice',
+      estMinutes: 10,
+      unitId: 'unit-1',
+      unitTitle: 'Starter Unit',
+      cefrLevel: 'A1',
+      trackCode: 'daily_core',
+      trackName: 'Core Track',
+      languageCode: 'en',
+      qaStatus: 'approved',
+      qaNotes: null,
+    },
+    body: {
+      intro: 'Welcome to your lesson.',
+      objective: 'Use simple present tense in daily context.',
+      tasks: ['listen', 'repeat', 'quiz'],
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Progress routes
+// ---------------------------------------------------------------------------
+app.get('/api/v1/progress', authMiddleware, (req, res) => {
+  db.get(`SELECT * FROM progress WHERE userId = ?`, [req.userId], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!row) return res.json({
+      vocabularyCompleted: [],
+      grammarCompleted: [],
+      storiesCompleted: [],
+      quizScores: [],
+      stars: 0,
+      level: 1,
+      username: 'Learner',
+    });
+    res.json({
+      vocabularyCompleted: parseJSON(row.vocabCompleted, []),
+      grammarCompleted: parseJSON(row.grammarCompleted, []),
+      storiesCompleted: parseJSON(row.storiesCompleted, []),
+      quizScores: parseJSON(row.quizScores, []),
+      stars: row.stars || 0,
+      level: row.level || 1,
+      username: 'Learner',
+    });
+  });
+});
+
+app.put('/api/v1/progress', authMiddleware, (req, res) => {
+  const { vocabularyCompleted, grammarCompleted, storiesCompleted, quizScores, stars, level } = req.body || {};
+  const updatedAt = nowIso();
+  db.run(
+    `INSERT INTO progress (userId, vocabCompleted, grammarCompleted, storiesCompleted, quizScores, stars, level, updatedAt)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT(userId) DO UPDATE SET
+       vocabCompleted=excluded.vocabCompleted,
+       grammarCompleted=excluded.grammarCompleted,
+       storiesCompleted=excluded.storiesCompleted,
+       quizScores=excluded.quizScores,
+       stars=excluded.stars,
+       level=excluded.level,
+       updatedAt=excluded.updatedAt`,
+    [
+      req.userId,
+      JSON.stringify(vocabularyCompleted || []),
+      JSON.stringify(grammarCompleted || []),
+      JSON.stringify(storiesCompleted || []),
+      JSON.stringify(quizScores || []),
+      stars || 0,
+      level || 1,
+      updatedAt
+    ],
+    (err) => {
+      if (err) return res.status(500).json({ error: 'DB_ERROR' });
+      res.json({ ok: true, updatedAt });
     }
-  ];
-  
-  res.json(createResponse(true, studentProgress));
+  );
 });
 
+// ---------------------------------------------------------------------------
+// Gamification (simple derived XP/streaks)
+// ---------------------------------------------------------------------------
+app.get('/api/v1/gamification/status', authMiddleware, (req, res) => {
+  db.get(`SELECT * FROM progress WHERE userId = ?`, [req.userId], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB_ERROR' });
+    const stars = row?.stars || 0;
+    const level = row?.level || 1;
+    const totalXp = stars * 10;
+    const currentStreakDays = 1;
+    const bestStreakDays = 1;
+    res.json({
+      totalXp,
+      level,
+      nextLevelXp: (level + 1) * 200,
+      currentStreakDays,
+      bestStreakDays,
+      lastActiveDate: nowIso(),
+    });
+  });
+});
+
+app.post('/api/v1/gamification/award', authMiddleware, (req, res) => {
+  const { points } = req.body || {};
+  const numericPoints = Number(points) || 0;
+  const starsToAdd = Math.max(1, Math.round(numericPoints / 10));
+  db.run(
+    `INSERT INTO progress (userId, stars, level, updatedAt)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(userId) DO UPDATE SET
+       stars = progress.stars + excluded.stars,
+       level = CASE
+         WHEN CAST(((progress.stars + excluded.stars) / 20) AS INT) + 1 > 50 THEN 50
+         ELSE CAST(((progress.stars + excluded.stars) / 20) AS INT) + 1
+       END,
+       updatedAt = excluded.updatedAt`,
+    [req.userId, starsToAdd, 1, nowIso()],
+    (err) => {
+      if (err) return res.status(500).json({ error: 'DB_ERROR' });
+      res.json({ ok: true });
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Lessons dynamic path/progress
+// ---------------------------------------------------------------------------
+app.post('/api/v1/lessons/path', authMiddleware, async (req, res) => {
+  const lessonIds = Array.isArray(req.body?.lessonIds) ? req.body.lessonIds.map(String) : [];
+  if (lessonIds.length === 0) {
+    return res.json({ statuses: [] });
+  }
+  try {
+    const placeholders = lessonIds.map(() => '?').join(',');
+    const rows = await dbAll(
+      `SELECT lessonId, masteryScore, completed FROM lesson_progress
+       WHERE userId = ? AND lessonId IN (${placeholders})`,
+      [req.userId, ...lessonIds]
+    );
+    const byId = new Map(rows.map((r) => [r.lessonId, r]));
+    const completedCount = rows.filter((r) => Number(r.completed) === 1).length;
+    const statuses = lessonIds.map((lessonId, index) => {
+      const row = byId.get(lessonId);
+      const unlocked = index < 2 || index <= completedCount + 1;
+      const masteryScore = Number(row?.masteryScore || 0);
+      return {
+        lessonId,
+        unlocked,
+        completed: Boolean(row?.completed),
+        masteryScore,
+        mastered: masteryScore >= 80,
+      };
+    });
+    res.json({ statuses });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.patch('/api/v1/lessons/:lessonId/progress', authMiddleware, async (req, res) => {
+  const lessonId = String(req.params.lessonId);
+  const masteryScore = Math.max(0, Math.min(100, Number(req.body?.masteryScore || 0)));
+  const completed = req.body?.completed ? 1 : 0;
+  try {
+    await dbRun(
+      `INSERT INTO lesson_progress (id, userId, lessonId, masteryScore, completed, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, lessonId) DO UPDATE SET
+         masteryScore=excluded.masteryScore,
+         completed=excluded.completed,
+         updatedAt=excluded.updatedAt`,
+      [generateId(), req.userId, lessonId, masteryScore, completed, nowIso()]
+    );
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Analytics routes
-app.get('/api/analytics/dashboard', (req, res) => {
-  const analytics = {
-    totalStudents: users.length,
-    totalLessons: lessons.length,
-    totalExercises: exercises.length,
-    averageProgress: 88.5,
-    engagementRate: 92.3,
-    completionRate: 85.7,
-    timeSpentToday: 2400, // seconds
-    activeUsers: 15
-  };
-  
-  res.json(createResponse(true, analytics));
+// ---------------------------------------------------------------------------
+app.post('/api/v1/analytics/events', authMiddleware, async (req, res) => {
+  const eventName = String(req.body?.eventName || '');
+  const source = String(req.body?.source || 'web');
+  const metadata = req.body?.metadata || {};
+  const scenario = String(metadata?.scenario || 'all');
+  if (!eventName) return res.status(400).json({ error: 'EVENT_NAME_REQUIRED' });
+  try {
+    await dbRun(
+      `INSERT INTO analytics_events (id, userId, eventName, source, scenario, metadata, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [generateId(), req.userId, eventName, source, scenario, JSON.stringify(metadata), nowIso()]
+    );
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
 });
 
-// Socket.IO for real-time features
-io.on('connection', (socket) => {
-  console.log('🔌 User connected:', socket.id);
-  
-  // Join room
-  socket.on('join_room', (data) => {
-    socket.join(data.roomId);
-    console.log(`📥 User ${socket.id} joined room ${data.roomId}`);
-    socket.emit('room_joined', { roomId: data.roomId });
-  });
-  
-  // Leave room
-  socket.on('leave_room', (data) => {
-    socket.leave(data.roomId);
-    console.log(`📤 User ${socket.id} left room ${data.roomId}`);
-    socket.emit('room_left', { roomId: data.roomId });
-  });
-  
-  // Send message
-  socket.on('send_message', (data) => {
-    const message = {
-      id: generateId(),
-      userId: data.userId,
-      username: data.username,
-      message: data.message,
-      timestamp: Date.now(),
-      roomId: data.roomId
+app.get('/api/v1/analytics/summary', authMiddleware, async (req, res) => {
+  const hours = Math.max(1, Math.min(24 * 30, Number(req.query.hours || 24)));
+  const scenario = String(req.query.scenario || 'all');
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const names = ['ai_tutor_submitted', 'ai_tutor_success', 'ai_tutor_retry', 'ai_tutor_cooldown_hit', 'ai_tutor_daily_cap_hit'];
+  const counts = Object.fromEntries(names.map((n) => [n, 0]));
+
+  try {
+    const rows = await dbAll(
+      `SELECT eventName, COUNT(*) as c FROM analytics_events
+       WHERE createdAt >= ? AND (? = 'all' OR scenario = ?)
+       GROUP BY eventName`,
+      [since, scenario, scenario]
+    );
+    rows.forEach((r) => {
+      if (counts[r.eventName] !== undefined) counts[r.eventName] = Number(r.c || 0);
+    });
+
+    const topScenarios = await dbAll(
+      `SELECT scenario, COUNT(*) as count FROM analytics_events
+       WHERE createdAt >= ?
+       GROUP BY scenario
+       ORDER BY count DESC
+       LIMIT 5`,
+      [since]
+    );
+
+    const submitted = counts.ai_tutor_submitted || 0;
+    const success = counts.ai_tutor_success || 0;
+    const successRate = submitted > 0 ? Math.round((success / submitted) * 1000) / 10 : 0;
+    res.json({
+      windowHours: hours,
+      scenario,
+      counts,
+      kpis: { submitted, success, successRate },
+      topScenarios: topScenarios.map((s) => ({ scenario: s.scenario || 'unknown', count: Number(s.count || 0) })),
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/analytics/trend', authMiddleware, async (req, res) => {
+  const hours = Math.max(1, Math.min(24 * 30, Number(req.query.hours || 24)));
+  const scenario = String(req.query.scenario || 'all');
+  const sinceDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const since = sinceDate.toISOString();
+  try {
+    const rows = await dbAll(
+      `SELECT strftime('%Y-%m-%dT%H:00:00Z', createdAt) as bucket, eventName, COUNT(*) as c
+       FROM analytics_events
+       WHERE createdAt >= ? AND (?='all' OR scenario = ?)
+       GROUP BY bucket, eventName`,
+      [since, scenario, scenario]
+    );
+    const map = new Map();
+    for (let i = 0; i < hours; i++) {
+      const d = new Date(sinceDate.getTime() + i * 60 * 60 * 1000);
+      const key = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours())).toISOString().slice(0, 19) + 'Z';
+      map.set(key, {
+        hour_start: key,
+        total: 0,
+        ai_tutor_submitted: 0,
+        ai_tutor_success: 0,
+        ai_tutor_retry: 0,
+        ai_tutor_cooldown_hit: 0,
+        ai_tutor_daily_cap_hit: 0,
+        success_rate: 0,
+      });
+    }
+    rows.forEach((r) => {
+      const row = map.get(r.bucket);
+      if (!row) return;
+      const count = Number(r.c || 0);
+      row.total += count;
+      if (row[r.eventName] !== undefined) row[r.eventName] += count;
+    });
+    const points = Array.from(map.values()).map((p) => ({
+      ...p,
+      success_rate: p.ai_tutor_submitted > 0 ? Math.round((p.ai_tutor_success / p.ai_tutor_submitted) * 1000) / 10 : 0,
+    }));
+    res.json({ windowHours: hours, scenario, points });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/analytics/ops/dashboard', authMiddleware, async (req, res) => {
+  const hours = Math.max(1, Math.min(24 * 30, Number(req.query.hours || 24)));
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM request_metrics WHERE createdAt >= ? ORDER BY createdAt ASC`,
+      [since]
+    );
+    const totalRequests = rows.length;
+    const totalErrors = rows.filter((r) => Number(r.statusCode) >= 500).length;
+    const retryCount = rows.reduce((s, r) => s + Number(r.retryCount || 0), 0);
+    const circuitOpenEvents = rows.reduce((s, r) => s + Number(r.circuitOpenCount || 0), 0);
+    const latencies = rows.map((r) => Number(r.latencyMs || 0)).sort((a, b) => a - b);
+    const avgLatencyMs = totalRequests ? Math.round(latencies.reduce((a, b) => a + b, 0) / totalRequests) : 0;
+    const p95LatencyMs = latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95))] : 0;
+    const errorRate = totalRequests ? Math.round((totalErrors / totalRequests) * 1000) / 10 : 0;
+
+    const grouped = {};
+    rows.forEach((r) => {
+      const b = String(r.createdAt).slice(0, 13) + ':00:00.000Z';
+      grouped[b] = grouped[b] || {
+        hour_start: b, request_count: 0, error_count: 0, retry_count: 0, circuit_open_count: 0, avg_latency_ms: 0, error_rate: 0,
+      };
+      const g = grouped[b];
+      g.request_count += 1;
+      g.error_count += Number(r.statusCode) >= 500 ? 1 : 0;
+      g.retry_count += Number(r.retryCount || 0);
+      g.circuit_open_count += Number(r.circuitOpenCount || 0);
+      g.avg_latency_ms += Number(r.latencyMs || 0);
+    });
+    const points = Object.values(grouped).map((g) => {
+      g.avg_latency_ms = g.request_count ? Math.round(g.avg_latency_ms / g.request_count) : 0;
+      g.error_rate = g.request_count ? Math.round((g.error_count / g.request_count) * 1000) / 10 : 0;
+      return g;
+    });
+
+    res.json({
+      windowHours: hours,
+      kpis: { totalRequests, totalErrors, errorRate, avgLatencyMs, p95LatencyMs, retryCount, circuitOpenEvents },
+      circuit: { state: 'CLOSED', failures: 0, threshold: 5, reopenInMs: 0 },
+      points,
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/analytics/ops/routes', authMiddleware, async (req, res) => {
+  const hours = Math.max(1, Math.min(24 * 30, Number(req.query.hours || 24)));
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  try {
+    const rows = await dbAll(
+      `SELECT method, path, statusCode, latencyMs FROM request_metrics WHERE createdAt >= ?`,
+      [since]
+    );
+    const map = new Map();
+    rows.forEach((r) => {
+      const key = `${r.method} ${r.path}`;
+      if (!map.has(key)) {
+        map.set(key, { method: r.method, path: r.path, requestCount: 0, errors5xx: 0, errorRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, latencies: [] });
+      }
+      const x = map.get(key);
+      x.requestCount += 1;
+      if (Number(r.statusCode) >= 500) x.errors5xx += 1;
+      const lat = Number(r.latencyMs || 0);
+      x.avgLatencyMs += lat;
+      x.latencies.push(lat);
+    });
+    const routes = Array.from(map.values()).map((x) => {
+      const sorted = x.latencies.sort((a, b) => a - b);
+      return {
+        method: x.method,
+        path: x.path,
+        requestCount: x.requestCount,
+        errors5xx: x.errors5xx,
+        errorRate: x.requestCount ? Math.round((x.errors5xx / x.requestCount) * 1000) / 10 : 0,
+        avgLatencyMs: x.requestCount ? Math.round(x.avgLatencyMs / x.requestCount) : 0,
+        p95LatencyMs: sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] : 0,
+      };
+    }).sort((a, b) => b.requestCount - a.requestCount).slice(0, limit);
+    const topFailingRoutes = [...routes]
+      .sort((a, b) => b.errors5xx - a.errors5xx)
+      .slice(0, Math.min(5, routes.length))
+      .map((r) => ({ method: r.method, path: r.path, errors5xx: r.errors5xx, requestCount: r.requestCount }));
+    res.json({ windowHours: hours, limit, routes, topFailingRoutes });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SRS routes (server-side SM-2 style)
+// ---------------------------------------------------------------------------
+function reviewLogic(item, isCorrect, timeTakenSeconds) {
+  // Defaults
+  item.level ??= 0;
+  item.interval ??= 0;
+  item.easeFactor ??= 2.5;
+  item.history ??= [];
+
+  // Quality score
+  let quality = 0;
+  if (isCorrect) quality = timeTakenSeconds < 3 ? 5 : timeTakenSeconds < 6 ? 4 : 3;
+  else quality = 2;
+
+  item.history.push(isCorrect);
+  if (item.history.length > 20) item.history.shift();
+
+  if (quality >= 3) {
+    if (item.level === 0) item.interval = 1;
+    else if (item.level === 1) item.interval = 6;
+    else item.interval = Math.round(item.interval * item.easeFactor);
+    item.level += 1;
+  } else {
+    item.level = 0;
+    item.interval = 1;
+  }
+
+  item.easeFactor = item.easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+  if (item.easeFactor < 1.3) item.easeFactor = 1.3;
+
+  const next = new Date();
+  next.setDate(next.getDate() + item.interval);
+  item.nextReviewAt = next.toISOString();
+  return item;
+}
+
+app.get('/api/v1/srs/due', authMiddleware, (req, res) => {
+  const now = new Date().toISOString();
+  db.all(
+    `SELECT * FROM srs_items WHERE userId = ? AND nextReviewAt <= ? ORDER BY datetime(nextReviewAt) ASC`,
+    [req.userId, now],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'DB_ERROR' });
+      const items = rows.map(r => ({
+        id: r.id,
+        type: r.itemType,
+        level: r.level,
+        nextReviewAt: r.nextReviewAt,
+        easeFactor: r.easeFactor,
+        interval: r.interval,
+        history: parseJSON(r.history, [])
+      }));
+      res.json({ items });
+    }
+  );
+});
+
+app.post('/api/v1/srs/review', authMiddleware, (req, res) => {
+  const { itemId, itemType, isCorrect, timeTakenSeconds } = req.body || {};
+  if (!itemId || !itemType) return res.status(400).json({ error: 'ITEM_REQUIRED' });
+
+  db.get(`SELECT * FROM srs_items WHERE id = ?`, [itemId], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB_ERROR' });
+
+    const base = row ? {
+      id: row.id,
+      userId: row.userId,
+      itemType: row.itemType,
+      level: row.level,
+      nextReviewAt: row.nextReviewAt,
+      easeFactor: row.easeFactor,
+      interval: row.interval,
+      history: parseJSON(row.history, [])
+    } : {
+      id: itemId,
+      userId: req.userId,
+      itemType,
+      level: 0,
+      nextReviewAt: nowIso(),
+      easeFactor: 2.5,
+      interval: 0,
+      history: []
     };
-    
-    io.to(data.roomId).emit('new_message', message);
+
+    const updated = reviewLogic(base, !!isCorrect, Number(timeTakenSeconds) || 0);
+    db.run(
+      `INSERT INTO srs_items (id, userId, itemType, level, nextReviewAt, easeFactor, interval, history)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET
+         level=excluded.level,
+         nextReviewAt=excluded.nextReviewAt,
+         easeFactor=excluded.easeFactor,
+         interval=excluded.interval,
+         history=excluded.history`,
+      [
+        updated.id,
+        req.userId,
+        updated.itemType,
+        updated.level,
+        updated.nextReviewAt,
+        updated.easeFactor,
+        updated.interval,
+        JSON.stringify(updated.history)
+      ],
+      (writeErr) => {
+        if (writeErr) return res.status(500).json({ error: 'DB_ERROR' });
+        res.json({ item: updated });
+      }
+    );
   });
-  
-  // Typing indicator
-  socket.on('typing', (data) => {
-    socket.to(data.roomId).emit('user_typing', {
-      userId: data.userId,
-      username: data.username,
-      roomId: data.roomId,
-      isTyping: data.isTyping
+});
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+app.get('/api/v1/health', (_req, res) => {
+  res.json({ status: 'healthy', ts: nowIso(), version: 'v1' });
+});
+
+// ---------------------------------------------------------------------------
+// Realtime voice placeholder (Socket.IO)
+// ---------------------------------------------------------------------------
+const voiceUsage = new Map(); // userId -> { start: number, count: number }
+
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (!token) return next(new Error('UNAUTHORIZED'));
+    const payload = jwt.verify(token, JWT_SECRET);
+    socket.userId = payload.sub;
+    return next();
+  } catch {
+    return next(new Error('UNAUTHORIZED'));
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log('🔌 Socket connected', socket.id);
+  socket.on('voice:join', (roomId) => {
+    const safeRoom = roomId || `room-${socket.userId || 'anon'}`;
+    socket.join(safeRoom);
+    socket.to(safeRoom).emit('voice:peer-joined', { peerId: socket.id, userId: socket.userId });
+  });
+
+  socket.on('voice:ping', (payload) => {
+    socket.emit('voice:pong', { ts: payload?.ts || Date.now() });
+  });
+
+  // Placeholder for audio frames (expect base64 or ArrayBuffer)
+  socket.on('voice:frame', ({ roomId, frame }) => {
+    if (!socket.userId) return;
+    const safeRoom = roomId || `room-${socket.userId}`;
+
+    // Per-user simple rate limit (frames/minute)
+    const now = Date.now();
+    const usage = voiceUsage.get(socket.userId) || { start: now, count: 0 };
+    if (now - usage.start > 60_000) {
+      usage.start = now;
+      usage.count = 0;
+    }
+    usage.count += 1;
+    voiceUsage.set(socket.userId, usage);
+    if (usage.count > MAX_FRAMES_PER_MIN) {
+      const resetInMs = Math.max(0, 60_000 - (now - usage.start));
+      socket.emit('voice:limit', { resetInMs, maxPerMinute: MAX_FRAMES_PER_MIN });
+      return;
+    }
+
+    // Broadcast raw frame to other peers (for future decoding)
+    socket.to(safeRoom).emit('voice:frame', { peerId: socket.id, frame });
+
+    // STT/TTS integration (best-effort, throttled per socket)
+    if (!openai) {
+      const transcript = 'I heard your voice... (mock STT - set OPENAI_API_KEY for real transcription)';
+      io.to(safeRoom).emit('voice:transcript', {
+        peerId: socket.id,
+        text: transcript,
+        ts: Date.now(),
+      });
+      return;
+    }
+
+    // Avoid overlap per socket
+    if (socket.sttInFlight) return;
+    socket.sttInFlight = true;
+
+    const buf = Buffer.from(frame, 'base64');
+    openai.audio.transcriptions.create({
+      file: buf,
+      model: 'whisper-1',
+      response_format: 'json',
+    }).then(async (resp) => {
+      const text = resp?.text || '';
+      if (text) {
+        io.to(safeRoom).emit('voice:transcript', {
+          peerId: socket.id,
+          text,
+          ts: Date.now(),
+        });
+
+        // Generate short TTS reply
+        const tts = await openai.audio.speech.create({
+          model: 'gpt-4o-mini-tts',
+          voice: 'alloy',
+          input: 'Great job! Keep talking.',
+        });
+        const audioBuffer = Buffer.from(await tts.arrayBuffer());
+        const audioBase64 = audioBuffer.toString('base64');
+        io.to(safeRoom).emit('voice:tts', {
+          peerId: 'bot',
+          text: 'Great job! Keep talking.',
+          audioBase64,
+        });
+      }
+    }).catch((e) => {
+      console.error('STT/TTS error', e.message);
+    }).finally(() => {
+      socket.sttInFlight = false;
     });
   });
-  
-  // User status
-  socket.on('update_status', (data) => {
-    socket.broadcast.emit('user_status_changed', {
-      userId: socket.id,
-      ...data
-    });
-  });
-  
-  // Disconnect
+
   socket.on('disconnect', () => {
-    console.log('🔌 User disconnected:', socket.id);
+    console.log('🔌 Socket disconnected', socket.id);
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err);
-  res.status(500).json(createResponse(false, null, 'حدث خطأ في الخادم'));
+// ---------------------------------------------------------------------------
+// Error handling
+// ---------------------------------------------------------------------------
+app.use((err, _req, res, _next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'SERVER_ERROR' });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json(createResponse(false, null, 'المورد غير موجود'));
+app.use('*', (_req, res) => {
+  res.status(404).json({ error: 'NOT_FOUND' });
 });
 
-// Start server
-const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 API available at: http://localhost:${PORT}/api`);
-  console.log(`🔌 Socket.IO server ready`);
-  console.log(`🌐 Client URL: ${process.env.CLIENT_URL || 'http://localhost:5174'}`);
+  console.log(`🚀 API ready on http://localhost:${PORT}/api/v1`);
+  console.log(`🌐 CORS clients: ${CLIENT_URLS.join(', ')}`);
 });
 
-module.exports = { app, server, io };
+module.exports = { app, server, io, db };

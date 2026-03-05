@@ -18,6 +18,9 @@ const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
 const MainLayout = lazy(() => import('./layouts/MainLayout'));
 const LessonPage = lazy(() => import('./pages/LessonPage'));
 const LessonsPage = lazy(() => import('./pages/LessonsPageFixed'));
+const SpeedRushPage = lazy(() => import('./pages/SpeedRushPage'));
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
+const ReadingQuestPage = lazy(() => import('./pages/ReadingQuestPage'));
 const PracticePage = lazy(() =>
   import('./pages/PracticePage').then((module) => ({ default: module.PracticePage }))
 );
@@ -39,8 +42,42 @@ function App() {
   const onboarded = isOnboardingCompleted();
 
   const direction = i18n.language === 'ar' ? 'rtl' : 'ltr';
-  const appTheme = createTheme({ direction });
-
+  const appTheme = createTheme({
+    direction,
+    palette: {
+      primary: { main: '#4CAF50', contrastText: '#FFFFFF' },
+      secondary: { main: '#2196F3', contrastText: '#FFFFFF' },
+      background: { default: '#F4F9F4', paper: '#FFFFFF' },
+      text: { primary: '#2E3D49', secondary: '#546E7A' },
+      success: { main: '#81C784' },
+      warning: { main: '#FFB74D' },
+      info: { main: '#4FC3F7' },
+      error: { main: '#E57373' }
+    },
+    typography: {
+      fontFamily: '"Nunito", "Tajawal", "Cairo", sans-serif',
+      h1: { fontWeight: 900, color: '#1B5E20' },
+      h2: { fontWeight: 800, color: '#1B5E20' },
+      h3: { fontWeight: 800, color: '#1B5E20' },
+      h4: { fontWeight: 800, color: '#1B5E20' },
+      h5: { fontWeight: 800, color: '#1B5E20' },
+      h6: { fontWeight: 800, color: '#1B5E20' },
+      button: { textTransform: 'none', fontWeight: 700 },
+    },
+    shape: { borderRadius: 16 },
+    components: {
+      MuiButton: {
+        styleOverrides: {
+          root: { borderRadius: 24, padding: '10px 24px', boxShadow: 'none' }
+        }
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: { borderRadius: 16, boxShadow: '0 4px 12px rgba(0,0,0,0.03)', border: '1px solid #E8F5E9' }
+        }
+      }
+    }
+  });
   useEffect(() => {
     document.documentElement.dir = direction;
     document.documentElement.lang = i18n.language;
@@ -77,6 +114,9 @@ function App() {
                 element={isAdmin ? <AnalyticsDashboardPage /> : <Navigate to="/home" replace />}
               />
               <Route path="/lesson/:lessonId" element={<LessonPage />} />
+              <Route path="/speed-rush" element={<SpeedRushPage />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/reading-quest" element={<ReadingQuestPage />} />
               <Route path="*" element={<Navigate to={authed ? '/home' : '/login'} replace />} />
             </Route>
           </Routes>

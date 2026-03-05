@@ -1,55 +1,29 @@
-import { useState, useEffect, useMemo } from 'react';
-import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  LinearProgress,
-  Chip,
-  Alert,
-  Stepper,
-  Step,
-  StepLabel,
-  IconButton,
-  TextField,
-} from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Box, Typography, Button, Card, CardContent, Chip, IconButton, Stack, Avatar, TextField, LinearProgress } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  ArrowBack,
-  ArrowForward,
-  VolumeUp,
-  CheckCircle,
-  PlayArrow,
-  Refresh,
-} from '@mui/icons-material';
-import { 
-  getA1LessonById, 
-  getAllA1Lessons,
-  type A1Lesson, 
-  type Exercise 
-} from '../core/a1Content';
+import { ArrowBack, VolumeUp, CheckCircle, Cancel, EmojiEvents, SentimentDissatisfied, Refresh } from '@mui/icons-material';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
+import { getA1LessonById, type A1Lesson } from '../core/a1Content';
 import { playSuccess, playClick } from '../core/sounds';
-import { getNextRecommendedLesson, recordLessonAttempt, type MasterySkill, type RemediationPlan } from '../core/masteryEngine';
+import { getMasteryThreshold, recordLessonAttempt, type RemediationPlan } from '../core/masteryEngine';
+import { updateLessonProgress } from '../core/api';
+
+const MotionBox = motion(Box);
+const MotionCard = motion(Card);
 
 const LessonPage = () => {
   const navigate = useNavigate();
   const { lessonId } = useParams<{ lessonId: string }>();
-  
+
   const [lesson, setLesson] = useState<A1Lesson | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | number>>({});
   const [showResult, setShowResult] = useState(false);
   const [exerciseResults, setExerciseResults] = useState<Record<string, boolean>>({});
   const [lessonScore, setLessonScore] = useState<number | null>(null);
   const [lessonMastery, setLessonMastery] = useState<number | null>(null);
-  const [nextLessonId, setNextLessonId] = useState<string | null>(null);
   const [remediationPlan, setRemediationPlan] = useState<RemediationPlan | null>(null);
-
-  const allLessons = useMemo(() => getAllA1Lessons(), []);
-  const lessonById = useMemo(() => new Map(allLessons.map((item) => [item.id, item])), [allLessons]);
 
   useEffect(() => {
     if (lessonId) {
@@ -59,69 +33,15 @@ const LessonPage = () => {
     }
   }, [lessonId]);
 
-  const handleCompleteStep = () => {
-    playClick();
-    if (!completedSteps.includes(currentStep)) {
-      setCompletedSteps([...completedSteps, currentStep]);
-    }
-    if (currentStep < 2) {
-      setCurrentStep(currentStep + 1);
-    }
-  };
-
   const handleExerciseAnswer = (exerciseId: string, answer: string | number) => {
-    setSelectedAnswers({
-      ...selectedAnswers,
-      [exerciseId]: answer,
-    });
+    if (showResult) return;
+    playClick();
+    setSelectedAnswers(prev => ({ ...prev, [exerciseId]: answer }));
   };
 
-  const checkExerciseAnswer = (exercise: Exercise): boolean => {
-    const userAnswer = selectedAnswers[exercise.id];
-    return userAnswer === exercise.correctAnswer;
-  };
-
-  const getExerciseSkill = (exercise: Exercise): MasterySkill => {
-    if (!lesson) return 'vocabulary';
-    if (exercise.type === 'speaking') return 'speaking';
-    if (lesson.category === 'reading') return 'reading';
-    if (lesson.category === 'listening') return 'listening';
-    if (lesson.category === 'speaking') return 'speaking';
-    if (lesson.category === 'grammar') return 'grammar';
-    return 'vocabulary';
-  };
-
-  const handleSubmitExercises = () => {
-    if (!lesson?.exercises) return;
-
-    const results: Record<string, boolean> = {};
-    lesson.exercises.forEach(exercise => {
-      results[exercise.id] = checkExerciseAnswer(exercise);
-    });
-    setExerciseResults(results);
-    setShowResult(true);
-    
-    // Play sound based on correctness
-    const correctCount = Object.values(results).filter(r => r).length;
-    const weakSkills = lesson.exercises
-      .filter((exercise) => !results[exercise.id])
-      .map((exercise) => getExerciseSkill(exercise));
-    const masteryUpdate = recordLessonAttempt({
-      lessonId: lesson.id,
-      lessonCategory: lesson.category,
-      totalExercises: lesson.exercises.length,
-      correctExercises: correctCount,
-      weakSkills,
-    });
-    const recommendedLesson = getNextRecommendedLesson(allLessons);
-    setLessonScore(masteryUpdate.scorePercent);
-    setLessonMastery(masteryUpdate.lessonMastery);
-    setRemediationPlan(masteryUpdate.activeRemediationPlan);
-    setNextLessonId(recommendedLesson?.id || null);
-
-    if (correctCount === lesson.exercises.length) {
-      playSuccess();
-    }
+  const handleFillBlankChange = (exerciseId: string, value: string) => {
+    if (showResult) return;
+    setSelectedAnswers(prev => ({ ...prev, [exerciseId]: value }));
   };
 
   const speakText = (text: string) => {
@@ -133,446 +53,481 @@ const LessonPage = () => {
     }
   };
 
-  const resetExercises = () => {
+  const handleSubmitExercises = async () => {
+    if (!lesson?.exercises) return;
+    const results: Record<string, boolean> = {};
+    lesson.exercises.forEach(ex => {
+      const userAnswer = selectedAnswers[ex.id];
+      if (ex.type === 'fill-blank') {
+        results[ex.id] = String(userAnswer ?? '').trim().toLowerCase() === String(ex.correctAnswer).toLowerCase();
+      } else {
+        results[ex.id] = userAnswer === ex.correctAnswer;
+      }
+    });
+    setExerciseResults(results);
+    setShowResult(true);
+
+    const correctCount = Object.values(results).filter(Boolean).length;
+    if (correctCount === lesson.exercises.length) {
+      playSuccess();
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#FFC107', '#4CAF50', '#2196F3', '#E91E63']
+      });
+    }
+
+    const masteryUpdate = recordLessonAttempt({
+      lessonId: lesson.id,
+      lessonCategory: lesson.category,
+      totalExercises: lesson.exercises.length,
+      correctExercises: correctCount,
+      weakSkills: []
+    });
+
+    setLessonScore(masteryUpdate.scorePercent);
+    setLessonMastery(masteryUpdate.lessonMastery);
+    setRemediationPlan(masteryUpdate.activeRemediationPlan);
+
+    const completed = masteryUpdate.lessonMastery >= getMasteryThreshold();
+    updateLessonProgress(lesson.id, masteryUpdate.lessonMastery, completed).catch(() => {
+      // Keep local progress as fallback if remote sync fails.
+    });
+  };
+
+  const handleRetry = () => {
     setSelectedAnswers({});
-    setExerciseResults({});
     setShowResult(false);
+    setExerciseResults({});
     setLessonScore(null);
     setLessonMastery(null);
-    setNextLessonId(null);
     setRemediationPlan(null);
   };
 
-  const getStepIcon = (step: number) => {
-    switch (step) {
-      case 0: return '📚';
-      case 1: return '📝';
-      case 2: return '✏️';
-      default: return '📖';
-    }
-  };
+  const allAnswered = lesson?.exercises?.every(ex => {
+    const ans = selectedAnswers[ex.id];
+    if (ex.type === 'fill-blank') return typeof ans === 'string' && ans.trim().length > 0;
+    return ans !== undefined;
+  }) ?? false;
 
-  const getStepTitle = (step: number) => {
-    switch (step) {
-      case 0: return 'المفردات';
-      case 1: return 'القواعد';
-      case 2: return 'التمارين';
-      default: return '';
-    }
-  };
+  if (loading) return <Box sx={{ p: 4, textAlign: 'center' }}><Typography>Loading...</Typography></Box>;
+  if (!lesson) return <Box sx={{ p: 4, textAlign: 'center' }}><Typography>Lesson not found</Typography></Box>;
 
-  const progress = lesson ? ((completedSteps.length) / 3) * 100 : 0;
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <Typography variant="h6">جاري تحميل الدرس...</Typography>
-      </Box>
-    );
-  }
-
-  if (!lesson) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 8 }}>
-        <Typography variant="h6" color="error" sx={{ mb: 2 }}>
-          الدرس غير موجود
-        </Typography>
-        <Button variant="contained" onClick={() => navigate('/home')}>
-          العودة للرئيسية
-        </Button>
-      </Box>
-    );
-  }
+  const totalExercises = lesson.exercises?.length ?? 0;
+  const correctCount = Object.values(exerciseResults).filter(Boolean).length;
+  const isPerfect = showResult && correctCount === totalExercises;
+  const isPassing = showResult && (lessonScore ?? 0) >= 70;
 
   return (
-    <Box sx={{ pb: 6, minHeight: '100vh' }}>
-      {/* Header */}
-      <Box sx={{ 
-        background: 'linear-gradient(135deg, #0B4B88 0%, #0C7FA0 60%, #7BC8A4 100%)', 
-        py: { xs: 3, md: 4 }, 
-        px: { xs: 2, md: 3 }, 
-        mb: 4, 
-        textAlign: 'center' 
-      }}>
-        <Button
-          startIcon={<ArrowBack />}
-          onClick={() => navigate('/home')}
-          sx={{ 
-            position: 'absolute', 
-            right: 20, 
-            top: 20,
-            background: 'rgba(255,255,255,0.2)',
-            color: 'white',
-            '&:hover': {
-              background: 'rgba(255,255,255,0.3)',
-            }
-          }}
-        >
-          العودة
-        </Button>
-        
-        <Typography variant="h3" sx={{ 
-          color: 'white', 
-          fontWeight: 800, 
-          mb: 1, 
-          fontSize: { xs: '1.8rem', md: '2.5rem' } 
-        }}>
-          {lesson.titleAr}
-        </Typography>
-        <Typography variant="h6" sx={{ 
-          color: 'rgba(255,255,255,0.9)', 
-          fontSize: { xs: '0.95rem', md: '1.1rem' } 
-        }}>
+    <Box sx={{ minHeight: '100vh', backgroundColor: '#F9FBE7', fontFamily: '"Nunito", sans-serif', pb: 10 }}>
+      {/* App Bar */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, pt: 4, background: 'linear-gradient(135deg, rgba(76,175,80,0.95), rgba(56,142,60,0.95))', color: 'white', borderBottomLeftRadius: 28, borderBottomRightRadius: 28, mb: 4, boxShadow: '0 8px 24px rgba(76,175,80,0.3)' }}>
+        <IconButton onClick={() => navigate('/home')} sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', width: 44, height: 44, '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
+          <ArrowBack />
+        </IconButton>
+        <Typography variant="h6" sx={{ fontWeight: 900, fontFamily: '"Merriweather", serif' }}>
           {lesson.title}
         </Typography>
-        
-        <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Chip 
-            label={`الوحدة ${lesson.unit}`} 
-            sx={{ background: 'rgba(255,255,255,0.2)', color: 'white' }} 
-          />
-          <Chip 
-            label={lesson.level} 
-            sx={{ background: 'rgba(255,255,255,0.2)', color: 'white' }} 
-          />
-          <Chip 
-            label={`${lesson.duration} دقيقة`} 
-            sx={{ background: 'rgba(255,255,255,0.2)', color: 'white' }} 
-          />
-        </Box>
+        <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: 44, height: 44, fontSize: '1.3rem' }}>
+          🎟️
+        </Avatar>
       </Box>
 
-      <Box sx={{ px: { xs: 2, md: 4 }, maxWidth: 1000, mx: 'auto' }}>
-        {/* Progress */}
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                تقدم الدرس
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                {Math.round(progress)}% مكتمل
-              </Typography>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={progress}
-              sx={{
-                height: 10,
-                borderRadius: 5,
-                background: '#E3F2FD',
-                '& .MuiLinearProgress-bar': {
-                  background: 'linear-gradient(90deg, #0B4B88, #2979C1)',
-                  borderRadius: 5,
-                },
-              }}
-            />
+      <Box sx={{ px: 2, maxWidth: 600, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+        {/* Badges Card */}
+        <Card sx={{ borderRadius: 4, border: '1px solid #E8F5E9', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
+              <Chip label={lesson.level} sx={{ bgcolor: '#E8F5E9', color: '#2E7D32', fontWeight: 800, borderRadius: 2 }} />
+              <Chip label={`${lesson.duration} min`} sx={{ bgcolor: '#E3F2FD', color: '#1565C0', fontWeight: 800, borderRadius: 2 }} />
+              <Chip label="50 XP" sx={{ bgcolor: '#FFF3E0', color: '#E65100', fontWeight: 800, borderRadius: 2 }} />
+              <Chip label={lesson.category} sx={{ bgcolor: '#F3E5F5', color: '#7B1FA2', fontWeight: 800, borderRadius: 2, textTransform: 'capitalize' }} />
+            </Stack>
+            <Typography sx={{ color: '#616161', lineHeight: 1.6 }}>
+              {lesson.description}
+            </Typography>
           </CardContent>
         </Card>
 
-        {/* Stepper */}
-        <Stepper activeStep={currentStep} sx={{ mb: 4 }}>
-          {[0, 1, 2].map((step) => (
-            <Step key={step} completed={completedSteps.includes(step)}>
-              <StepLabel icon={getStepIcon(step)}>
-                {getStepTitle(step)}
-              </StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+        {/* Key Vocabulary */}
+        {lesson.vocabulary && (
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 800, color: '#1B5E20', mb: 2 }}>
+              📖 Key Vocabulary
+            </Typography>
+            <Stack spacing={2}>
+              {lesson.vocabulary.map((v, i) => (
+                <Card key={i} sx={{ borderRadius: 4, border: '1px solid #E8F5E9', boxShadow: '0 4px 12px rgba(0,0,0,0.02)', position: 'relative' }}>
+                  <CardContent sx={{ p: 2.5, pr: 14 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#2E7D32', mb: 0.5 }}>{v.word}</Typography>
+                    <Typography variant="body2" sx={{ color: '#757575', mb: 0.5 }}>
+                      {v.pronunciation} • {v.translation}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#9E9E9E' }}>
+                      {v.exampleTranslation}
+                    </Typography>
+                    <Button
+                      onClick={() => speakText(v.word)}
+                      variant="contained"
+                      color="success"
+                      size="small"
+                      sx={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', borderRadius: 4, px: 2, bgcolor: '#4CAF50', boxShadow: 'none', minWidth: 'auto' }}
+                      startIcon={<VolumeUp />}
+                    >
+                      Listen
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          </Box>
+        )}
 
-        {/* Step Content */}
-        {currentStep === 0 && lesson.vocabulary && (
-          <Card>
-            <CardContent>
-              <Typography variant="h5" sx={{ fontWeight: 800, mb: 3 }}>
-                📚 المفردات الجديدة
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 2 }}>
-                {lesson.vocabulary.map((item, index) => (
-                  <Card variant="outlined" sx={{ height: '100%' }} key={index}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                          {item.word}
-                        </Typography>
-                        <IconButton 
-                          onClick={() => speakText(item.word)}
-                          size="small"
-                          sx={{ color: '#0B4B88' }}
-                        >
-                          <VolumeUp />
-                        </IconButton>
-                      </Box>
-                      
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        {item.pronunciation}
-                      </Typography>
-                      
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#0B4B88', mb: 1 }}>
-                        {item.translation}
-                      </Typography>
-                      
-                      <Typography variant="body2" sx={{ mb: 1, fontStyle: 'italic' }}>
-                        "{item.example}"
-                      </Typography>
-                      
-                      <Typography variant="body2" color="text.secondary">
-                        {item.exampleTranslation}
-                      </Typography>
-                      
-                      <Chip 
-                        label={item.category} 
-                        size="small" 
-                        sx={{ mt: 1, background: '#E3F2FD', color: '#0B4B88' }}
-                      />
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-              
-              <Box sx={{ textAlign: 'center', mt: 3 }}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={handleCompleteStep}
-                  sx={{
-                    background: 'linear-gradient(135deg, #0B4B88, #2979C1)',
-                    px: 4,
-                  }}
-                >
-                  التالي
-                  <ArrowForward sx={{ mr: 1 }} />
-                </Button>
+        {/* Grammar */}
+        {lesson.grammar && (
+          <Card sx={{ borderRadius: 4, border: '1px solid #E8F5E9', boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: '#1B5E20', mb: 1 }}>📝 {lesson.grammar.title}</Typography>
+              <Typography sx={{ color: '#616161', mb: 2 }}>{lesson.grammar.explanation}</Typography>
+              <Box sx={{ bgcolor: '#F5F5F5', p: 2, borderRadius: 2 }}>
+                <Typography sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#2E7D32' }}>{lesson.grammar.formula}</Typography>
               </Box>
             </CardContent>
           </Card>
         )}
 
-        {currentStep === 1 && lesson.grammar && (
-          <Card>
-            <CardContent>
-              <Typography variant="h5" sx={{ fontWeight: 800, mb: 3 }}>
-                📝 القاعدة النحوية
-              </Typography>
-              
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0B4B88', mb: 2 }}>
-                {lesson.grammar.titleAr}
-              </Typography>
-              
-              <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                {lesson.grammar.title}
-              </Typography>
-              
-              <Box sx={{ 
-                background: '#F8FAFB', 
-                p: 2, 
-                borderRadius: 2, 
-                mb: 3 
-              }}>
-                <Typography variant="body1" sx={{ mb: 2 }}>
-                  {lesson.grammar.explanationAr}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {lesson.grammar.explanation}
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                  {lesson.grammar.formula}
-                </Typography>
-              </Box>
-              
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-                أمثلة:
-              </Typography>
-              
-              {lesson.grammar.examples.map((example, index) => (
-                <Card key={index} variant="outlined" sx={{ mb: 2 }}>
-                  <CardContent>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      <Box component="span" sx={{ 
-                        background: '#FFE0B2', 
-                        px: 1, 
-                        borderRadius: 1,
-                        fontWeight: 700
-                      }}>
-                        {example.highlight}
-                      </Box>
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {example.translation}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              <Box sx={{ textAlign: 'center', mt: 3 }}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={handleCompleteStep}
-                  sx={{
-                    background: 'linear-gradient(135deg, #0B4B88, #2979C1)',
-                    px: 4,
-                  }}
-                >
-                  التالي
-                  <ArrowForward sx={{ mr: 1 }} />
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        )}
+        {/* Quick Practice */}
+        {lesson.exercises && lesson.exercises.length > 0 && (
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 800, color: '#1B5E20', mb: 2 }}>
+              🎯 Quick Practice
+            </Typography>
+            <Stack spacing={2.5}>
+              {lesson.exercises.map((ex, exIndex) => {
+                const isCorrect = exerciseResults[ex.id];
+                const isWrong = showResult && !isCorrect;
+                const answered = showResult;
 
-        {currentStep === 2 && lesson.exercises && (
-          <Card>
-            <CardContent>
-              <Typography variant="h5" sx={{ fontWeight: 800, mb: 3 }}>
-                ✏️ تمارين الدرس
-              </Typography>
-              
-              {lesson.exercises.map((exercise, index) => (
-                <Card key={exercise.id} variant="outlined" sx={{ mb: 3 }}>
-                  <CardContent>
-                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-                      التمرين {index + 1}
-                    </Typography>
-                    
-                    <Typography variant="body1" sx={{ mb: 2 }}>
-                      {exercise.questionAr}
-                    </Typography>
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {exercise.question}
-                    </Typography>
-                    
-                    {exercise.type === 'multiple-choice' && exercise.options && (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        {exercise.options.map((option, optIndex) => (
-                          <Box key={optIndex} sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%' } }}>
-                            <Button
-                              fullWidth
-                              variant={selectedAnswers[exercise.id] === optIndex ? "contained" : "outlined"}
-                              onClick={() => handleExerciseAnswer(exercise.id, optIndex)}
-                              sx={{
-                                textAlign: 'right',
-                                justifyContent: 'flex-start',
-                                p: 2,
-                                background: selectedAnswers[exercise.id] === optIndex ? '#E3F2FD' : 'white',
-                                borderColor: selectedAnswers[exercise.id] === optIndex ? '#0B4B88' : '#E0E0E0',
-                                color: selectedAnswers[exercise.id] === optIndex ? '#0B4B88' : 'text.primary',
-                              }}
-                            >
-                              {option}
-                            </Button>
-                          </Box>
-                        ))}
-                      </Box>
-                    )}
-                    
-                    {exercise.type === 'fill-blank' && (
-                      <TextField
-                        fullWidth
-                        multiline
-                        rows={2}
-                        value={selectedAnswers[exercise.id] as string || ''}
-                        onChange={(e) => handleExerciseAnswer(exercise.id, e.target.value)}
-                        placeholder="اكتب إجابتك هنا..."
-                        sx={{ mt: 2 }}
-                      />
-                    )}
-                    
-                    {showResult && exerciseResults[exercise.id] !== undefined && (
-                      <Alert 
-                        severity={exerciseResults[exercise.id] ? "success" : "error"} 
-                        sx={{ mt: 2 }}
-                      >
-                        {exerciseResults[exercise.id] ? "إجابة صحيحة!" : "إجابة خاطئة"}
-                        <Typography variant="body2" sx={{ mt: 1 }}>
-                          {exercise.explanationAr}
-                        </Typography>
-                      </Alert>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-              
-              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 3 }}>
-                {!showResult ? (
-                  <Button
-                    variant="contained"
-                    size="large"
-                    onClick={handleSubmitExercises}
-                    disabled={Object.keys(selectedAnswers).length !== lesson.exercises.length}
-                    sx={{
-                      background: 'linear-gradient(135deg, #0B4B88, #2979C1)',
-                      px: 4,
-                    }}
+                // Determine border/background based on result
+                const cardBorder = answered
+                  ? isCorrect ? '2px solid #4CAF50' : '2px solid #F44336'
+                  : '1px solid #E8F5E9';
+                const cardBg = answered
+                  ? isCorrect ? 'linear-gradient(145deg, #fff, #F1F8E9)' : 'linear-gradient(145deg, #fff, #FFF3F3)'
+                  : 'white';
+
+                return (
+                  <MotionCard
+                    key={ex.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: exIndex * 0.1 }}
+                    sx={{ borderRadius: 4, border: cardBorder, background: cardBg, boxShadow: answered ? (isCorrect ? '0 4px 16px rgba(76,175,80,0.15)' : '0 4px 16px rgba(244,67,54,0.15)') : '0 4px 12px rgba(0,0,0,0.02)', overflow: 'hidden' }}
                   >
-                    <CheckCircle sx={{ mr: 1 }} />
-                    تصحيح الإجابات
-                  </Button>
-                ) : (
-                  <>
-                    <Box sx={{ width: '100%' }}>
-                      <Alert severity={lessonScore !== null && lessonScore >= 70 ? 'success' : 'warning'} sx={{ mb: 2 }}>
-                        Lesson score: <strong>{lessonScore ?? 0}%</strong> | Mastery: <strong>{lessonMastery ?? 0}%</strong>
-                      </Alert>
-                      {remediationPlan && (
-                        <Alert
-                          severity="info"
-                          sx={{ mb: 2 }}
-                          action={
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => {
-                                const query = new URLSearchParams({
-                                  scenario: remediationPlan.aiScenario,
-                                  message: remediationPlan.aiPrompt,
-                                  remediationPlanId: remediationPlan.id,
-                                });
-                                navigate(`/ai-tutor?${query.toString()}`);
-                              }}
-                            >
-                              Start AI Recovery
-                            </Button>
-                          }
-                        >
-                          {remediationPlan.title} - {remediationPlan.reason}
-                        </Alert>
+                    {/* Question header */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, pt: 2.5, pb: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#F5F5F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Typography sx={{ fontSize: '0.8rem', fontWeight: 900, color: '#757575' }}>Q{exIndex + 1}</Typography>
+                        </Box>
+                        <Chip
+                          label={ex.type === 'fill-blank' ? '✏️ Fill Blank' : '🔘 Multiple Choice'}
+                          size="small"
+                          sx={{ fontSize: '0.7rem', fontWeight: 700, bgcolor: '#F5F5F5', color: '#616161', height: 22 }}
+                        />
+                      </Box>
+                      {answered && (
+                        <AnimatePresence>
+                          <MotionBox
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                          >
+                            {isCorrect
+                              ? <CheckCircle sx={{ color: '#4CAF50', fontSize: '1.8rem' }} />
+                              : <Cancel sx={{ color: '#F44336', fontSize: '1.8rem' }} />
+                            }
+                          </MotionBox>
+                        </AnimatePresence>
                       )}
                     </Box>
-                    <Button
-                      variant="outlined"
-                      size="large"
-                      onClick={resetExercises}
-                      startIcon={<Refresh />}
-                    >
-                      إعادة المحاولة
-                    </Button>
-                    <Button
-                      variant="contained"
-                      size="large"
-                      onClick={() => {
-                        if (nextLessonId && lessonById.has(nextLessonId)) {
-                          navigate(`/lesson/${nextLessonId}`);
-                          return;
-                        }
-                        navigate('/home');
-                      }}
-                      sx={{
-                        background: 'linear-gradient(135deg, #4CAF50, #66BB6A)',
-                        px: 4,
-                      }}
-                    >
-                      <PlayArrow sx={{ mr: 1 }} />
-                      {nextLessonId && lessonById.has(nextLessonId) ? 'Start Next Lesson' : 'Finish Lesson'}
-                    </Button>
-                  </>
-                )}
-              </Box>
-            </CardContent>
-          </Card>
+
+                    <CardContent sx={{ px: 3, pt: 1, pb: 3 }}>
+                      <Typography sx={{ fontWeight: 800, color: '#2C3E50', mb: 2.5, fontSize: '1.05rem', lineHeight: 1.5 }}>
+                        {ex.question}
+                      </Typography>
+
+                      {/* Multiple choice */}
+                      {ex.type !== 'fill-blank' && ex.options && (
+                        <Stack direction="row" flexWrap="wrap" gap={1.5} useFlexGap>
+                          {ex.options.map((opt, oIdx) => {
+                            const isSelected = selectedAnswers[ex.id] === oIdx;
+                            const isCorrectOption = oIdx === ex.correctAnswer;
+
+                            let btnBg = 'transparent';
+                            let btnColor = '#757575';
+                            let btnBorder = '#E0E0E0';
+                            let btnShadow = 'none';
+
+                            if (answered) {
+                              if (isCorrectOption) {
+                                btnBg = '#4CAF50'; btnColor = 'white'; btnBorder = '#388E3C';
+                                btnShadow = '0 4px 12px rgba(76,175,80,0.3)';
+                              } else if (isSelected && !isCorrectOption) {
+                                btnBg = '#F44336'; btnColor = 'white'; btnBorder = '#D32F2F';
+                                btnShadow = '0 4px 12px rgba(244,67,54,0.3)';
+                              }
+                            } else if (isSelected) {
+                              btnBg = '#2196F3'; btnColor = 'white'; btnBorder = '#1976D2';
+                              btnShadow = '0 4px 12px rgba(33,150,243,0.3)';
+                            }
+
+                            return (
+                              <Box sx={{ width: { xs: '48%', sm: '48%' } }} key={oIdx}>
+                                <motion.div whileHover={!answered ? { scale: 1.02 } : {}} whileTap={!answered ? { scale: 0.97 } : {}}>
+                                  <Button
+                                    fullWidth
+                                    disabled={answered}
+                                    onClick={() => handleExerciseAnswer(ex.id, oIdx)}
+                                    sx={{
+                                      borderRadius: 3, py: 1.5, fontWeight: 700,
+                                      textTransform: 'none', fontSize: '0.9rem',
+                                      border: `2px solid ${btnBorder}`,
+                                      bgcolor: btnBg, color: btnColor,
+                                      boxShadow: btnShadow,
+                                      '&.Mui-disabled': { color: btnColor, bgcolor: btnBg, border: `2px solid ${btnBorder}` },
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    {opt}
+                                  </Button>
+                                </motion.div>
+                              </Box>
+                            );
+                          })}
+                        </Stack>
+                      )}
+
+                      {/* Fill blank */}
+                      {ex.type === 'fill-blank' && (
+                        <Box>
+                          <TextField
+                            fullWidth
+                            disabled={showResult}
+                            placeholder="Type your answer here..."
+                            value={selectedAnswers[ex.id] as string ?? ''}
+                            onChange={(e) => handleFillBlankChange(ex.id, e.target.value)}
+                            variant="outlined"
+                            inputProps={{ style: { fontSize: '1.1rem', fontWeight: 700 } }}
+                            sx={{
+                              '& .MuiOutlinedInput-root': {
+                                borderRadius: 3,
+                                '&.Mui-focused fieldset': { borderColor: '#4CAF50', borderWidth: 2 },
+                                '&.Mui-disabled': {
+                                  '& fieldset': { borderColor: answered ? (isCorrect ? '#4CAF50' : '#F44336') : '#E0E0E0', borderWidth: 2 }
+                                }
+                              },
+                            }}
+                          />
+                        </Box>
+                      )}
+
+                      {/* Feedback box for wrong answers */}
+                      {answered && isWrong && (
+                        <AnimatePresence>
+                          <MotionBox
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            transition={{ duration: 0.3, delay: 0.2 }}
+                            sx={{ mt: 2, p: 2, bgcolor: '#FFF8E1', borderRadius: 3, border: '1px solid #FFE082' }}
+                          >
+                            <Typography sx={{ fontWeight: 800, color: '#F57C00', fontSize: '0.85rem', mb: 0.5 }}>
+                              💡 الإجابة الصحيحة:
+                            </Typography>
+                            <Typography sx={{ fontWeight: 900, color: '#2C3E50', fontSize: '1rem' }}>
+                              {ex.type === 'fill-blank'
+                                ? String(ex.correctAnswer)
+                                : ex.options?.[ex.correctAnswer as number] ?? String(ex.correctAnswer)
+                              }
+                            </Typography>
+                            <Typography sx={{ color: '#78909C', fontSize: '0.8rem', mt: 0.5 }}>
+                              {ex.explanation}
+                            </Typography>
+                          </MotionBox>
+                        </AnimatePresence>
+                      )}
+
+                      {/* Feedback box for correct answers */}
+                      {answered && isCorrect && (
+                        <AnimatePresence>
+                          <MotionBox
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            transition={{ duration: 0.3, delay: 0.2 }}
+                            sx={{ mt: 2, p: 1.5, bgcolor: '#E8F5E9', borderRadius: 3, border: '1px solid #A5D6A7' }}
+                          >
+                            <Typography sx={{ fontWeight: 700, color: '#2E7D32', fontSize: '0.85rem' }}>
+                              ✅ ممتاز! {ex.explanation}
+                            </Typography>
+                          </MotionBox>
+                        </AnimatePresence>
+                      )}
+                    </CardContent>
+                  </MotionCard>
+                );
+              })}
+            </Stack>
+
+            {/* Check Answers / Result Section */}
+            <Box sx={{ mt: 4 }}>
+              {!showResult ? (
+                <motion.div whileHover={{ scale: allAnswered ? 1.02 : 1 }} whileTap={{ scale: allAnswered ? 0.98 : 1 }}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    onClick={handleSubmitExercises}
+                    disabled={!allAnswered}
+                    sx={{
+                      py: 2, borderRadius: 4,
+                      background: allAnswered ? 'linear-gradient(135deg, #2196F3, #1565C0)' : undefined,
+                      fontSize: '1.1rem', fontWeight: 900,
+                      boxShadow: allAnswered ? '0 8px 20px rgba(33,150,243,0.35)' : 'none',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    ✓ Check Answers
+                  </Button>
+                </motion.div>
+              ) : (
+                <AnimatePresence>
+                  <MotionBox
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                  >
+                    {/* Score card */}
+                    <Card sx={{
+                      borderRadius: 5, mb: 3, overflow: 'hidden',
+                      background: isPerfect
+                        ? 'linear-gradient(135deg, #43A047, #1B5E20)'
+                        : isPassing
+                          ? 'linear-gradient(135deg, #1E88E5, #1565C0)'
+                          : 'linear-gradient(135deg, #E53935, #B71C1C)',
+                      color: 'white',
+                      boxShadow: isPerfect
+                        ? '0 12px 32px rgba(76,175,80,0.4)'
+                        : isPassing
+                          ? '0 12px 32px rgba(33,150,243,0.4)'
+                          : '0 12px 32px rgba(244,67,54,0.4)',
+                    }}>
+                      <CardContent sx={{ p: 3.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.5 }}>
+                          <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.2)', borderRadius: '50%', display: 'flex' }}>
+                            {isPassing
+                              ? <EmojiEvents sx={{ fontSize: '2.5rem', color: '#FFC107' }} />
+                              : <SentimentDissatisfied sx={{ fontSize: '2.5rem' }} />
+                            }
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontWeight: 900, fontSize: '1.4rem', lineHeight: 1 }}>
+                              {isPerfect ? '🎉 Perfect Score!' : isPassing ? '👍 Good Job!' : '💪 Keep Trying!'}
+                            </Typography>
+                            <Typography sx={{ opacity: 0.85, fontSize: '0.9rem', mt: 0.5 }}>
+                              {correctCount} out of {totalExercises} correct
+                            </Typography>
+                          </Box>
+                        </Box>
+
+                        {/* Score bar */}
+                        <Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', opacity: 0.9 }}>Score</Typography>
+                            <Typography sx={{ fontWeight: 900, fontSize: '1rem' }}>{lessonScore}%</Typography>
+                          </Box>
+                          <Box sx={{ height: 10, bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 5, overflow: 'hidden' }}>
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${lessonScore}%` }}
+                              transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+                              style={{ height: '100%', background: 'rgba(255,255,255,0.85)', borderRadius: 5 }}
+                            />
+                          </Box>
+                        </Box>
+
+                        {/* Mastery bar */}
+                        <Box sx={{ mt: 1.5 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', opacity: 0.9 }}>Lesson Mastery</Typography>
+                            <Typography sx={{ fontWeight: 900, fontSize: '1rem' }}>{lessonMastery}%</Typography>
+                          </Box>
+                          <LinearProgress
+                            variant="determinate"
+                            value={lessonMastery ?? 0}
+                            sx={{ height: 10, borderRadius: 5, bgcolor: 'rgba(255,255,255,0.2)', '& .MuiLinearProgress-bar': { bgcolor: '#FFC107', borderRadius: 5 } }}
+                          />
+                        </Box>
+                      </CardContent>
+                    </Card>
+
+                    {/* AI Tutor suggestion */}
+                    {remediationPlan && (
+                      <Card sx={{ borderRadius: 4, mb: 2.5, border: '2px solid #E3F2FD', bgcolor: '#F8FBFF' }}>
+                        <CardContent sx={{ p: 2.5 }}>
+                          <Stack direction="row" alignItems="center" spacing={1.5}>
+                            <Box sx={{ fontSize: '2rem' }}>🤖</Box>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography sx={{ fontWeight: 800, color: '#1565C0', mb: 0.5 }}>AI Tutor can help!</Typography>
+                              <Typography sx={{ color: '#607D8B', fontSize: '0.85rem' }}>
+                                Get focused practice on the topics you missed.
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              onClick={() => navigate(`/ai-tutor?scenario=${remediationPlan.aiScenario}&message=${remediationPlan.aiPrompt}&remediationPlanId=${remediationPlan.id}`)}
+                              sx={{ bgcolor: '#1565C0', borderRadius: 3, fontWeight: 800, boxShadow: 'none', flexShrink: 0 }}
+                            >
+                              Let's go
+                            </Button>
+                          </Stack>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Action buttons */}
+                    <Stack spacing={2}>
+                      {!isPerfect && (
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          onClick={handleRetry}
+                          startIcon={<Refresh />}
+                          sx={{ py: 1.75, borderRadius: 4, fontWeight: 800, fontSize: '1rem', borderColor: '#4CAF50', color: '#4CAF50', borderWidth: 2, '&:hover': { bgcolor: '#E8F5E9', borderWidth: 2 } }}
+                        >
+                          Try Again
+                        </Button>
+                      )}
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        onClick={() => navigate('/home')}
+                        sx={{
+                          py: 1.75, borderRadius: 4,
+                          background: 'linear-gradient(135deg, #4CAF50, #2E7D32)',
+                          fontSize: '1rem', fontWeight: 900,
+                          boxShadow: '0 8px 20px rgba(76,175,80,0.35)'
+                        }}
+                      >
+                        {isPerfect ? '🏠 Back to Home' : '✅ Complete Lesson'}
+                      </Button>
+                    </Stack>
+                  </MotionBox>
+                </AnimatePresence>
+              )}
+            </Box>
+          </Box>
         )}
       </Box>
     </Box>
@@ -580,4 +535,3 @@ const LessonPage = () => {
 };
 
 export default LessonPage;
-

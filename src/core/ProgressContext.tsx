@@ -1,6 +1,8 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useNotification } from './NotificationContext';
 import { useMissions } from './MissionContext';
+import { fetchProgress, saveProgressRemote, type RemoteProgress } from './api';
+import { isAuthenticated } from './auth';
 
 interface Progress {
     vocabularyCompleted: number[];
@@ -38,14 +40,46 @@ const ProgressContext = createContext<ProgressContextType | undefined>(undefined
 export const ProgressProvider = ({ children }: { children: ReactNode }) => {
     const { notify } = useNotification();
     const { missions, completeMission } = useMissions();
+    const authed = useMemo(() => isAuthenticated(), []);
     const [progress, setProgress] = useState<Progress>(() => {
         const saved = localStorage.getItem('smartEnglishProgress');
         return saved ? JSON.parse(saved) : defaultProgress;
     });
 
+    // Hydrate from server when authenticated
+    useEffect(() => {
+        if (!authed) return;
+        let cancelled = false;
+        fetchProgress()
+            .then((remote: RemoteProgress) => {
+                if (cancelled) return;
+                setProgress(prev => ({
+                    ...prev,
+                    ...remote,
+                    username: remote.username || prev.username || 'Student',
+                }));
+            })
+            .catch(() => {
+                // keep local if server unavailable
+            });
+        return () => { cancelled = true; };
+    }, [authed]);
+
     useEffect(() => {
         localStorage.setItem('smartEnglishProgress', JSON.stringify(progress));
-    }, [progress]);
+        if (authed) {
+            // Fire-and-forget sync; no await to keep UI snappy
+            saveProgressRemote({
+                vocabularyCompleted: progress.vocabularyCompleted,
+                grammarCompleted: progress.grammarCompleted,
+                storiesCompleted: progress.storiesCompleted,
+                quizScores: progress.quizScores,
+                stars: progress.stars,
+                level: progress.level,
+                username: progress.username,
+            }).catch(() => {});
+        }
+    }, [authed, progress]);
 
     const markVocabularyDone = (id: number) => {
         setProgress(prev => {

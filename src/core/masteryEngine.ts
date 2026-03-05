@@ -15,6 +15,32 @@ export interface RemediationPlan {
   resolvedAt?: string;
 }
 
+export interface MasteryLevelDef {
+  level: number;
+  name: string;
+  description: string;
+  minScore: number;
+}
+
+export const MASTERY_LEVELS: MasteryLevelDef[] = [
+  { level: 0, name: 'Not Started', description: 'No practice', minScore: 0 },
+  { level: 10, name: 'Beginner', description: 'Basic understanding', minScore: 40 },
+  { level: 25, name: 'Developing', description: 'Growing competence', minScore: 60 },
+  { level: 50, name: 'Proficient', description: 'Good understanding', minScore: 70 },
+  { level: 75, name: 'Advanced', description: 'Excellent understanding', minScore: 85 },
+  { level: 90, name: 'Expert', description: 'Mastery with teaching capabilities', minScore: 95 },
+];
+
+export function getMasteryLevelDetails(score: number): MasteryLevelDef {
+  let matched = MASTERY_LEVELS[0];
+  for (const level of MASTERY_LEVELS) {
+    if (score >= level.minScore) {
+      matched = level;
+    }
+  }
+  return matched;
+}
+
 export interface MasteryState {
   lessonMastery: Record<string, number>;
   lessonAttempts: Record<string, number>;
@@ -253,9 +279,13 @@ export function recordLessonAttempt(input: LessonAttemptInput) {
   const scorePercent = Math.round((input.correctExercises / total) * 100);
   const previousLessonMastery = state.lessonMastery[input.lessonId];
 
+  // Consistency bonus: If doing it multiple times and improving
+  const attemptCount = state.lessonAttempts[input.lessonId] || 0;
+  const consistencyBonus = attemptCount > 0 && scorePercent > (previousLessonMastery || 0) ? 5 : 0;
+
   const updatedLessonMastery =
     typeof previousLessonMastery === 'number'
-      ? Math.round(previousLessonMastery * 0.65 + scorePercent * 0.35)
+      ? Math.round(previousLessonMastery * 0.6 + scorePercent * 0.4) + consistencyBonus
       : scorePercent;
 
   state.lessonMastery[input.lessonId] = clamp(updatedLessonMastery);
@@ -280,25 +310,34 @@ export function getActiveRemediationPlan(state = getMasteryState()) {
   return state.remediationPlans.find((plan) => !plan.resolved) || null;
 }
 
-export function markRemediationPlanDone(planId: string) {
+export function markRemediationPlanDone(planId: string, performanceBoost: number = 10) {
   const state = getMasteryState();
-  state.remediationPlans = state.remediationPlans.map((plan) =>
-    plan.id === planId && !plan.resolved
-      ? { ...plan, resolved: true, resolvedAt: nowIso() }
-      : plan
-  );
-  state.updatedAt = nowIso();
-  saveMasteryState(state);
+  const plan = state.remediationPlans.find((plan) => plan.id === planId && !plan.resolved);
+
+  if (plan) {
+    plan.resolved = true;
+    plan.resolvedAt = nowIso();
+
+    // Re-evaluate mastery upon completion of remediation loop
+    // Give a significant boost to the skill to reflect AI tutor help
+    state.skillMastery[plan.skill] = clamp(state.skillMastery[plan.skill] + performanceBoost);
+
+    // Reset the weak streak since they successfully completed recovery
+    state.weakSkillStreak[plan.skill] = 0;
+
+    state.updatedAt = nowIso();
+    saveMasteryState(state);
+  }
 }
 
 export function getUnlockedLessonIds(lessons: A1Lesson[], state = getMasteryState()) {
   return lessons
-    .filter((lesson, index) => {
+    .filter((_, index) => {
       if (index === 0) return true;
       const previousLessonId = lessons[index - 1].id;
       const previousMastery = state.lessonMastery[previousLessonId] || 0;
-      const hasAttemptOnCurrent = (state.lessonAttempts[lesson.id] || 0) > 0;
-      return previousMastery >= MASTERY_THRESHOLD || hasAttemptOnCurrent;
+      // STRICT MASTERY GATING: Must cross the mastery threshold to unlock the next item
+      return previousMastery >= MASTERY_THRESHOLD;
     })
     .map((lesson) => lesson.id);
 }

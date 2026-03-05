@@ -95,12 +95,49 @@ export interface GamificationStatus {
 
 export interface AiTutorResponse {
   scenario: string;
-  correctionAr: string;
-  tutorReply: string;
-  nextStep: string;
+  correctionAr?: string;
+  tutorReply?: string;
+  nextStep?: string;
+  reply?: string;
+  correction?: string | null;
   safety: {
     blocked: boolean;
     reason: string | null;
+  };
+}
+
+export interface VisionConsent {
+  allowVision: boolean;
+  guardianName: string;
+  policyVersion: string;
+  updatedAt: string | null;
+}
+
+export interface SafetyPolicy {
+  version: string;
+  title: string;
+  summary: string;
+  rules: string[];
+}
+
+export interface LessonPathStatus {
+  lessonId: string;
+  unlocked: boolean;
+  completed: boolean;
+  mastered: boolean;
+  masteryScore: number;
+}
+
+export interface GeneratedContent {
+  cached: boolean;
+  content: {
+    title?: string;
+    text?: string;
+    questions?: Array<{
+      question: string;
+      options: string[];
+      answer: number;
+    }>;
   };
 }
 
@@ -199,9 +236,30 @@ export interface OpsRoutesResponse {
   topFailingRoutes: OpsTopFailingRoute[];
 }
 
+// Progress & SRS (server-backed)
+export interface RemoteProgress {
+  vocabularyCompleted: number[];
+  grammarCompleted: number[];
+  storiesCompleted: number[];
+  quizScores: { date: string; score: number; total: number }[];
+  stars: number;
+  level: number;
+  username?: string;
+}
+
+export interface RemoteSrsItem {
+  id: string;
+  type: 'vocabulary' | 'grammar';
+  level: number;
+  nextReviewAt: string;
+  easeFactor: number;
+  interval: number;
+  history: boolean[];
+}
+
 const API_HOSTNAME =
   typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const API_BASE_URL =
+export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || `http://${API_HOSTNAME}:4000/api/v1`;
 
 export class ApiError extends Error {
@@ -323,25 +381,47 @@ async function apiRequest<T>(
 }
 
 export async function register(payload: AuthPayload): Promise<AuthResponse> {
-  return apiRequest<AuthResponse>(
-    '/auth/register',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    },
-    { auth: false, retryOn401: false }
-  );
+  return apiRequest<AuthResponse>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, { auth: false, retryOn401: false });
 }
 
 export async function login(payload: AuthPayload): Promise<AuthResponse> {
-  return apiRequest<AuthResponse>(
-    '/auth/login',
-    {
-      method: 'POST',
-      body: JSON.stringify({ email: payload.email, password: payload.password }),
-    },
-    { auth: false, retryOn401: false }
-  );
+  return apiRequest<AuthResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, { auth: false, retryOn401: false });
+}
+
+// ---------------- Progress & SRS ----------------
+export async function fetchProgress(): Promise<RemoteProgress> {
+  return apiRequest<RemoteProgress>('/progress');
+}
+
+export async function saveProgressRemote(progress: RemoteProgress) {
+  return apiRequest<{ ok: boolean; updatedAt: string }>('/progress', {
+    method: 'PUT',
+    body: JSON.stringify(progress),
+  });
+}
+
+export async function getDueSrsItems(): Promise<RemoteSrsItem[]> {
+  const resp = await apiRequest<{ items: RemoteSrsItem[] }>('/srs/due');
+  return resp.items;
+}
+
+export async function reviewSrsItem(payload: {
+  itemId: string;
+  itemType: 'vocabulary' | 'grammar';
+  isCorrect: boolean;
+  timeTakenSeconds: number;
+}) {
+  const resp = await apiRequest<{ item: RemoteSrsItem }>('/srs/review', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return resp.item;
 }
 
 export async function getPlacementTest(languageCode: 'en' | 'el'): Promise<PlacementTestResponse> {
@@ -381,11 +461,45 @@ export async function awardXp(source: string, points: number) {
 }
 
 export async function askAiTutor(payload: {
-  message: string;
-  scenario: 'daily' | 'travel' | 'work' | 'migration';
-  proficiency: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-}) {
-  return apiRequest<AiTutorResponse>('/ai/tutor/reply', {
+  message?: string;
+  userMessage?: string;
+  scenario: 'daily' | 'travel' | 'work' | 'migration' | 'free' | 'restaurant' | 'airport' | 'shopping' | 'vision';
+  proficiency?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+  history?: Array<{ role: 'user' | 'bot'; text: string; imageBase64?: string }>;
+  langCode?: string;
+  imageBase64?: string;
+}): Promise<AiTutorResponse> {
+  return apiRequest<{
+    reply: string;
+    correction: string | null;
+    safety: { blocked: boolean; reason: string | null };
+  }>('/ai/tutor/reply', {
+    method: 'POST',
+    body: JSON.stringify({
+      userMessage: payload.userMessage || payload.message || '',
+      scenario: payload.scenario,
+      langCode: payload.langCode || 'en-US',
+      history: payload.history || [],
+      imageBase64: payload.imageBase64,
+    }),
+  }).then((resp) => ({
+    scenario: payload.scenario,
+    reply: resp.reply,
+    correction: resp.correction,
+    safety: resp.safety,
+  }));
+}
+
+export async function getVisionConsent() {
+  return apiRequest<VisionConsent>('/safety/consent');
+}
+
+export async function getSafetyPolicy() {
+  return apiRequest<SafetyPolicy>('/safety/policy');
+}
+
+export async function saveVisionConsent(payload: { allowVision: boolean; guardianName?: string }) {
+  return apiRequest<{ ok: boolean; allowVision: boolean; updatedAt: string; policyVersion: string }>('/safety/consent', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -420,4 +534,29 @@ export async function getOpsDashboard(hours = 24) {
 
 export async function getOpsRoutes(hours = 24, limit = 20) {
   return apiRequest<OpsRoutesResponse>(`/analytics/ops/routes?hours=${hours}&limit=${limit}`);
+}
+
+export async function getLessonPathStatuses(lessonIds: string[]) {
+  return apiRequest<{ statuses: LessonPathStatus[] }>('/lessons/path', {
+    method: 'POST',
+    body: JSON.stringify({ lessonIds }),
+  });
+}
+
+export async function updateLessonProgress(lessonId: string, masteryScore: number, completed: boolean) {
+  return apiRequest<{ ok: boolean }>(`/lessons/${lessonId}/progress`, {
+    method: 'PATCH',
+    body: JSON.stringify({ masteryScore, completed }),
+  });
+}
+
+export async function generateDynamicContent(payload: { topic: string; level?: string; mode?: string }) {
+  return apiRequest<GeneratedContent>('/content/generate', {
+    method: 'POST',
+    body: JSON.stringify({
+      topic: payload.topic,
+      level: payload.level || 'A1',
+      mode: payload.mode || 'story',
+    }),
+  });
 }

@@ -1,22 +1,123 @@
 ﻿import { useState } from 'react';
 import {
     Box, Typography, Grid, Card, CardContent, Button,
-    Collapse, Chip, LinearProgress,
+    Collapse, Chip, LinearProgress, IconButton,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { grammarLessons } from '../core/data';
 import { useProgress } from '../core/ProgressContext';
-import { playClick, playSuccess, playStar } from '../core/sounds';
+import { playClick, playSuccess, playStar, playCorrect, playWrong } from '../core/sounds';
+import { getDueReviews, getSRSStats, reviewItem, type SRSItem } from '../core/srsEngine';
+import { motion } from 'framer-motion';
 
 const GrammarPage = () => {
     const navigate = useNavigate();
     const { progress, markGrammarDone } = useProgress();
     const [expanded, setExpanded] = useState<number | null>(null);
 
+    // SRS State
+    const [srsMode, setSrsMode] = useState(false);
+    const [dueItems, setDueItems] = useState<SRSItem[]>([]);
+    const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
+    const [reviewStartTime, setReviewStartTime] = useState<number>(0);
+    const [srsStats, setSrsStats] = useState(getSRSStats());
+
     const completed = progress.grammarCompleted.length;
     const pct = Math.round((completed / grammarLessons.length) * 100);
 
     const toggle = (id: number) => setExpanded(prev => (prev === id ? null : id));
+
+    const startSRSReview = async () => {
+        const due = (await getDueReviews()).filter(item => item.type === 'grammar');
+        if (due.length === 0) return;
+        setDueItems(due);
+        setCurrentReviewIndex(0);
+        setReviewStartTime(Date.now());
+        setSrsMode(true);
+        playClick();
+    };
+
+    const handleSRSAnswer = async (isCorrect: boolean) => {
+        const item = dueItems[currentReviewIndex];
+        const timeTaken = (Date.now() - reviewStartTime) / 1000;
+
+        await reviewItem(item.id, 'grammar', isCorrect, timeTaken);
+
+        if (isCorrect) playCorrect(); else playWrong();
+
+        if (currentReviewIndex + 1 < dueItems.length) {
+            setCurrentReviewIndex(prev => prev + 1);
+            setReviewStartTime(Date.now());
+        } else {
+            // Finished review session
+            playSuccess();
+            setSrsMode(false);
+            setDueItems([]);
+            setSrsStats(getSRSStats());
+        }
+    };
+
+    // SRS Review UI
+    if (srsMode && dueItems.length > 0) {
+        const currentItem = dueItems[currentReviewIndex];
+        const grammarId = parseInt(currentItem.id.replace('grammar-', ''), 10);
+        const lesson = grammarLessons.find(g => g.id === grammarId);
+
+        if (!lesson) {
+            setSrsMode(false);
+            return null;
+        }
+
+        return (
+            <Box sx={{ height: '100dvh', bgcolor: '#121212', color: 'white', display: 'flex', flexDirection: 'column', p: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4, alignItems: 'center' }}>
+                    <Typography sx={{ fontWeight: 800, color: '#FF9800' }}>🧠 Grammar Review</Typography>
+                    <Typography sx={{ fontWeight: 800 }}>{currentReviewIndex + 1} / {dueItems.length}</Typography>
+                    <IconButton onClick={() => setSrsMode(false)} sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }}>✕</IconButton>
+                </Box>
+
+                <LinearProgress variant="determinate" value={(currentReviewIndex / dueItems.length) * 100} sx={{ mb: 4, height: 8, borderRadius: 4, '& .MuiLinearProgress-bar': { background: '#FF9800' } }} />
+
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} key={lesson.id} style={{ width: '100%', maxWidth: 500 }}>
+                        <Card sx={{ width: '100%', minHeight: 300, borderRadius: 6, bgcolor: '#1E1E1E', color: 'white', p: 4, boxShadow: '0 16px 40px rgba(0,0,0,0.5)', border: '2px solid #333' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                                <Typography sx={{ fontSize: '3rem', mr: 2 }}>{lesson.emoji}</Typography>
+                                <Typography variant="h4" sx={{ fontWeight: 800 }}>{lesson.title}</Typography>
+                            </Box>
+
+                            <Typography variant="body1" sx={{ color: '#E0E0E0', fontSize: '1.1rem', mb: 4, lineHeight: 1.6 }}>
+                                Do you remember the rule for this?
+                            </Typography>
+
+                            {expanded !== lesson.id ? (
+                                <Button fullWidth variant="contained" onClick={() => setExpanded(lesson.id)} sx={{ bgcolor: '#FF9800', color: 'black', fontWeight: 800, '&:hover': { bgcolor: '#F57C00' }, borderRadius: 4, py: 1.5 }}>
+                                    Show Explanation
+                                </Button>
+                            ) : (
+                                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 3, mb: 3, borderLeft: `4px solid ${lesson.color}` }}>
+                                        <Typography sx={{ mb: 2 }}>{lesson.explanation}</Typography>
+                                        {lesson.examples.slice(0, 2).map((ex, i) => (
+                                            <Typography key={i} variant="body2" sx={{ color: '#A5D6A7', mb: 0.5 }}>• {ex}</Typography>
+                                        ))}
+                                    </Box>
+                                    <Box sx={{ display: 'flex', gap: 2, width: '100%' }}>
+                                        <Button fullWidth variant="contained" color="error" onClick={() => { handleSRSAnswer(false); setExpanded(null); }} sx={{ py: 2, fontWeight: 800, borderRadius: 4 }}>
+                                            Forgot (1)
+                                        </Button>
+                                        <Button fullWidth variant="contained" color="success" onClick={() => { handleSRSAnswer(true); setExpanded(null); }} sx={{ py: 2, fontWeight: 800, borderRadius: 4 }}>
+                                            Remembered (3)
+                                        </Button>
+                                    </Box>
+                                </motion.div>
+                            )}
+                        </Card>
+                    </motion.div>
+                </Box>
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ pb: 6 }}>
@@ -64,6 +165,14 @@ const GrammarPage = () => {
                     startIcon={<span>â†</span>}
                 >
                     Back to Home
+                </Button>
+                <Button
+                    onClick={startSRSReview}
+                    disabled={srsStats.due === 0}
+                    variant="contained"
+                    sx={{ mb: 3, ml: 1, fontWeight: 700 }}
+                >
+                    Memory Review ({srsStats.due})
                 </Button>
 
                 <Grid container spacing={3}>
