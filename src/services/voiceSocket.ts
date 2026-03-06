@@ -6,8 +6,19 @@ import { API_BASE_URL } from '../core/api';
 import { getAccessToken } from '../core/auth';
 
 let socketPromise: Promise<Socket> | null = null;
+let socketInstance: Socket | null = null;
 
 export function getVoiceSocket(): Promise<Socket> {
+  const token = getAccessToken() || '';
+
+  if (socketInstance) {
+    socketInstance.auth = { token };
+    if (!socketInstance.connected) {
+      socketInstance.connect();
+    }
+    return Promise.resolve(socketInstance);
+  }
+
   if (!socketPromise) {
     socketPromise = import('socket.io-client').then(({ io }) => {
       const url = API_BASE_URL.replace('/api/v1', '');
@@ -20,9 +31,10 @@ export function getVoiceSocket(): Promise<Socket> {
         reconnectionAttempts: 8,
         reconnectionDelay: 500,
         auth: {
-          token: getAccessToken() || ''
+          token
         }
       });
+      socketInstance = socket;
 
       socket.on('connect_error', () => {
         socket.auth = { token: getAccessToken() || '' };
@@ -30,6 +42,7 @@ export function getVoiceSocket(): Promise<Socket> {
 
       socket.on('disconnect', (reason) => {
         if (reason === 'io server disconnect') {
+          socketInstance = null;
           socketPromise = null;
         }
       });
@@ -37,5 +50,8 @@ export function getVoiceSocket(): Promise<Socket> {
       return socket;
     });
   }
-  return socketPromise;
+  return socketPromise.then((socket) => {
+    socket.auth = { token: getAccessToken() || '' };
+    return socket;
+  });
 }

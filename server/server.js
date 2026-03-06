@@ -857,7 +857,17 @@ app.get('/api/v1/analytics/summary', authMiddleware, async (req, res) => {
   const hours = Math.max(1, Math.min(24 * 30, Number(req.query.hours || 24)));
   const scenario = String(req.query.scenario || 'all');
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  const names = ['ai_tutor_submitted', 'ai_tutor_success', 'ai_tutor_retry', 'ai_tutor_cooldown_hit', 'ai_tutor_daily_cap_hit'];
+  const names = [
+    'ai_tutor_submitted',
+    'ai_tutor_success',
+    'ai_tutor_retry',
+    'ai_tutor_cooldown_hit',
+    'ai_tutor_daily_cap_hit',
+    'voice_socket_connect_error',
+    'voice_socket_disconnected',
+    'voice_socket_reconnected',
+    'voice_stream_start_failed',
+  ];
   const counts = Object.fromEntries(names.map((n) => [n, 0]));
 
   try {
@@ -920,6 +930,10 @@ app.get('/api/v1/analytics/trend', authMiddleware, async (req, res) => {
         ai_tutor_retry: 0,
         ai_tutor_cooldown_hit: 0,
         ai_tutor_daily_cap_hit: 0,
+        voice_socket_connect_error: 0,
+        voice_socket_disconnected: 0,
+        voice_socket_reconnected: 0,
+        voice_stream_start_failed: 0,
         success_rate: 0,
       });
     }

@@ -150,7 +150,8 @@ export type AiTutorEventName =
 export type VoiceSocketEventName =
   | 'voice_socket_connect_error'
   | 'voice_socket_disconnected'
-  | 'voice_socket_reconnected';
+  | 'voice_socket_reconnected'
+  | 'voice_stream_start_failed';
 export type AnalyticsEventName = AiTutorEventName | VoiceSocketEventName;
 
 export type AiScenarioFilter = 'all' | 'daily' | 'travel' | 'work' | 'migration';
@@ -178,6 +179,10 @@ export interface AnalyticsTrendPoint {
   ai_tutor_retry: number;
   ai_tutor_cooldown_hit: number;
   ai_tutor_daily_cap_hit: number;
+  voice_socket_connect_error: number;
+  voice_socket_disconnected: number;
+  voice_socket_reconnected: number;
+  voice_stream_start_failed: number;
   success_rate: number;
 }
 

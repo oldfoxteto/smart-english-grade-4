@@ -76,6 +76,18 @@ function toBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
+function resolveRecorderMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return null;
+  }
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+  ];
+  return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || null;
+}
+
 function toTutorErrorText(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) {
@@ -374,31 +386,51 @@ const AITutorPage = () => {
     if (streaming) return;
     ensureVoiceSocket();
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-    mediaRecorderRef.current = recorder;
+    if (!navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      throw new Error('Voice capture is not supported on this device/browser.');
+    }
 
-    const chunks: Blob[] = [];
-    const flush = async () => {
-      if (!voiceSocketRef.current || chunks.length === 0) return;
-      const blob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
-      chunks.length = 0;
-      const base64 = toBase64(await blob.arrayBuffer());
-      voiceSocketRef.current.emit('voice:frame', { roomId: roomIdRef.current, frame: base64 });
-    };
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = resolveRecorderMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
 
-    recorder.ondataavailable = async (event) => {
-      if (event.data.size === 0) return;
-      chunks.push(event.data);
-      if (chunks.length >= 3) await flush();
-    };
+      const chunkMimeType = mimeType || 'audio/webm';
+      const chunks: Blob[] = [];
+      const flush = async () => {
+        if (!voiceSocketRef.current || chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: chunkMimeType });
+        chunks.length = 0;
+        const base64 = toBase64(await blob.arrayBuffer());
+        voiceSocketRef.current.emit('voice:frame', { roomId: roomIdRef.current, frame: base64 });
+      };
 
-    recorder.onstop = () => {
-      void flush();
-    };
+      recorder.ondataavailable = async (event) => {
+        if (event.data.size === 0) return;
+        chunks.push(event.data);
+        if (chunks.length >= 3) await flush();
+      };
 
-    recorder.start(250);
-    setStreaming(true);
+      recorder.onerror = () => {
+        setErrorText('Audio capture error. Please retry voice call.');
+      };
+
+      recorder.onstop = () => {
+        void flush();
+      };
+
+      recorder.start(250);
+      setStreaming(true);
+    } catch (error) {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      mediaRecorderRef.current = null;
+      setStreaming(false);
+      throw error;
+    }
   }, [ensureVoiceSocket, streaming]);
 
   useEffect(() => {
@@ -459,10 +491,10 @@ const AITutorPage = () => {
         .map((m) => ({ role: m.role, text: m.text, imageBase64: m.imageBase64 }));
 
       try {
-        await trackAnalyticsEvent({
+        void trackAnalyticsEvent({
           eventName: 'ai_tutor_submitted',
           metadata: { scenario: activeScenario, langCode: activeLang.code, hasImage: Boolean(imageBase64) },
-        });
+        }).catch(() => undefined);
 
         const response: AiTutorResponse = await askAiTutor({
           userMessage: userText,
@@ -483,10 +515,10 @@ const AITutorPage = () => {
         setMessages((prev) => prev.filter((m) => m.id !== 'typing').concat({ id: `${Date.now()}-bot`, role: 'bot', text: botReply, time: formatTime() }));
         speakVoice(botReply, activeLang.ttsLang);
 
-        await trackAnalyticsEvent({
+        void trackAnalyticsEvent({
           eventName: 'ai_tutor_success',
           metadata: { scenario: activeScenario, langCode: activeLang.code, blocked: Boolean(response.safety?.blocked) },
-        });
+        }).catch(() => undefined);
       } catch (error) {
         const message = toTutorErrorText(error);
         setErrorText(message);
@@ -548,7 +580,14 @@ const AITutorPage = () => {
           }
         }, 300);
         voiceSocketRef.current?.emit?.('voice:join', roomIdRef.current);
-        void startStreaming().catch(() => setErrorText('Microphone stream failed'));
+        void startStreaming().catch((error) => {
+          const reason = error instanceof Error ? error.message : 'Microphone stream failed';
+          setErrorText('Microphone stream failed');
+          void trackAnalyticsEvent({
+            eventName: 'voice_stream_start_failed',
+            metadata: { reason },
+          }).catch(() => undefined);
+        });
       } else {
         window.speechSynthesis.cancel();
         setBotIsSpeaking(false);
