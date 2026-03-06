@@ -3,7 +3,7 @@ const crypto = require('crypto');
 
 const API_BASE_URL = process.env.SMOKE_API_BASE_URL || 'https://smart-english-api.onrender.com/api/v1';
 const FRONTEND_URL = process.env.SMOKE_FRONTEND_URL || 'https://smart-english-grade-4.vercel.app';
-const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS || 15000);
+const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS || 30000);
 
 async function requestJson(url, init = {}) {
   const controller = new AbortController();
