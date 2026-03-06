@@ -25,6 +25,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Webcam from 'react-webcam';
 import {
   askAiTutor,
+  ApiError,
   getSafetyPolicy,
   getVisionConsent,
   saveVisionConsent,
@@ -72,6 +73,30 @@ function toBase64(buffer: ArrayBuffer) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+function toTutorErrorText(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return 'Your session expired. Please sign in again.';
+    }
+    if (error.status === 429) {
+      return 'The service is busy. Please wait a moment and retry.';
+    }
+    if (error.message === 'AI_PROXY_FAILED' || error.message === 'AI_SERVICE_UNAVAILABLE') {
+      return 'AI service is temporarily unavailable. Please try again in a minute.';
+    }
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    const lower = error.message.toLowerCase();
+    if (lower.includes('failed to fetch') || lower.includes('network')) {
+      return 'Cannot reach the server. Check your internet connection and retry.';
+    }
+  }
+
+  return 'Connection failed. Please try again.';
 }
 
 const AITutorPage = () => {
@@ -257,6 +282,10 @@ const AITutorPage = () => {
 
         socket.on('connect', () => setConnected(true));
         socket.on('disconnect', () => setConnected(false));
+        socket.on('connect_error', () => {
+          setConnected(false);
+          setErrorText('Voice channel is unavailable right now.');
+        });
         socket.on('voice:pong', (payload: any) => {
           if (!payload?.ts) return;
           setLatencyMs(Math.max(0, Date.now() - Number(payload.ts)));
@@ -404,12 +433,12 @@ const AITutorPage = () => {
           metadata: { scenario: activeScenario, langCode: activeLang.code, blocked: Boolean(response.safety?.blocked) },
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Tutor request failed';
+        const message = toTutorErrorText(error);
         setErrorText(message);
         setMessages((prev) =>
           prev
             .filter((m) => m.id !== 'typing')
-            .concat({ id: `${Date.now()}-err`, role: 'bot', text: 'Connection failed. Please try again.', time: formatTime() })
+            .concat({ id: `${Date.now()}-err`, role: 'bot', text: message, time: formatTime() })
         );
         await trackAnalyticsEvent({
           eventName: 'ai_tutor_retry',

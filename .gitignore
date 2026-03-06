@@ -34,3 +34,7 @@ test-results/
 # Database backups
 backups/
 backend/backups/
+server/data.db
+server/data.db-*
+
+.vercel

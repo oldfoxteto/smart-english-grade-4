@@ -40,8 +40,11 @@ After Vercel URL is created:
    - `/lessons`
    - `/ai-tutor`
    - `/analytics-dashboard` (admin only)
+4. Run smoke check from repo root:
+   - `npm run smoke:prod`
 
 ## Notes
 
 - Free Render may sleep after inactivity; first request can be slow.
 - SQLite in this API is fine for demo, not for production scale.
+- If any API key/token is exposed in chat/logs/screenshots, rotate it immediately.

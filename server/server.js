@@ -115,6 +115,44 @@ const generateId = () => Math.random().toString(36).slice(2, 10);
 const parseJSON = (value, fallback) => {
   try { return JSON.parse(value); } catch { return fallback; }
 };
+const classifyAiError = (error) => {
+  const status = Number(error?.status || 0);
+  const code = String(error?.code || error?.type || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+
+  if (
+    code.includes('insufficient_quota')
+    || message.includes('insufficient_quota')
+    || (status === 429 && message.includes('quota'))
+  ) {
+    return 'OPENAI_QUOTA_EXCEEDED';
+  }
+  if (
+    code.includes('invalid_api_key')
+    || message.includes('invalid api key')
+    || status === 401
+  ) {
+    return 'OPENAI_INVALID_KEY';
+  }
+  if (status === 429) {
+    return 'OPENAI_RATE_LIMITED';
+  }
+  if (status >= 500 || message.includes('timed out') || message.includes('network')) {
+    return 'OPENAI_UPSTREAM_ERROR';
+  }
+  return 'OPENAI_REQUEST_FAILED';
+};
+const aiRuntimeStatus = () => {
+  if (!OPENAI_API_KEY) {
+    return { configured: false, mode: 'fallback' };
+  }
+  return { configured: true, mode: 'openai' };
+};
+const tutorFallbackReply = (hasImage) => (
+  hasImage
+    ? 'Vision mode is temporarily unavailable. Please continue with text chat.'
+    : "AI tutor is temporarily unavailable right now. Let's continue with short practice."
+);
 const policyVersion = '2026-03-child-safe-v1';
 const safetyPolicy = {
   version: policyVersion,
@@ -492,8 +530,20 @@ Rules:
 
     res.json({ reply, correction, safety: safeBlocked });
   } catch (error) {
-    console.error('ai/tutor/reply error', error?.message || error);
-    res.status(500).json({ error: 'AI_PROXY_FAILED' });
+    const reason = classifyAiError(error);
+    console.error('ai/tutor/reply error', {
+      reason,
+      status: error?.status || null,
+      code: error?.code || error?.type || null,
+      message: error?.message || String(error),
+    });
+    res.json({
+      reply: tutorFallbackReply(Boolean(imageBase64)),
+      correction: null,
+      safety: safeBlocked,
+      degraded: true,
+      reason,
+    });
   }
 });
 
@@ -1098,7 +1148,7 @@ app.post('/api/v1/srs/review', authMiddleware, (req, res) => {
 // Health
 // ---------------------------------------------------------------------------
 app.get('/api/v1/health', (_req, res) => {
-  res.json({ status: 'healthy', ts: nowIso(), version: 'v1' });
+  res.json({ status: 'healthy', ts: nowIso(), version: 'v1', ai: aiRuntimeStatus() });
 });
 
 // ---------------------------------------------------------------------------

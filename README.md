@@ -9,8 +9,9 @@ Production-oriented web platform to teach English for grade 4 with:
 ## Tech Stack
 
 - Frontend: React + TypeScript + Vite
-- Backend: Node.js + Express + PostgreSQL
-- Infra: Docker, GitHub Actions, Firebase (Firestore + Storage rules)
+- Backend API (deployed on Render): Node.js + Express + SQLite (`server/`)
+- Backend MVP (separate track): Node.js + Express + PostgreSQL (`backend/`)
+- Infra: Docker, GitHub Actions, Firebase, Vercel (frontend), Render (API)
 
 ## Quick Start
 
@@ -21,7 +22,14 @@ npm run dev
 ```
 
 ```bash
-# backend
+# API used by Vercel/Render deployment (SQLite)
+cd server
+npm ci
+npm run dev
+```
+
+```bash
+# Optional PostgreSQL backend track
 cd backend
 npm ci
 npm run db:migrate
@@ -50,6 +58,10 @@ npm test
 - Main CI/CD workflow: `.github/workflows/ci-cd.yml`
 - Database backup workflow: `.github/workflows/db-backup.yml`
 - Production/staging deployment jobs require repository secrets (`PROD_*`, `STAGING_*`).
+- No-VPS deployment guide (Vercel + Render): `docs/DEPLOY_WITHOUT_VPS.md`
+- Render Blueprint config: `render.yaml`
+- Vercel SPA rewrite config: `vercel.json`
+- Production smoke test: `npm run smoke:prod`
 
 ## Environment and Secrets
 
@@ -59,6 +71,7 @@ npm test
   - `server/.env.example`
   - `src/mobile/react-native/.env.example`
 - Keep all tokens/keys in GitHub Secrets and local `.env` only.
+- If any key/token is exposed in logs/chat, rotate it immediately before next deploy.
 
 ## Project Docs
 

@@ -294,7 +294,7 @@ function buildHeaders(token?: string, extra?: HeadersInit): Headers {
 
 async function parseError(response: Response): Promise<{ message: string; details: Record<string, unknown> }> {
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  const message = String(body.error || `Request failed with status ${response.status}`);
+  const message = String(body.error || body.message || body.reason || `Request failed with status ${response.status}`);
   return { message, details: body };
 }
 

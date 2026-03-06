@@ -12,12 +12,28 @@ export function getVoiceSocket(): Promise<Socket> {
     socketPromise = import('socket.io-client').then(({ io }) => {
       const url = API_BASE_URL.replace('/api/v1', '');
       const socket = io(url, {
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
         path: '/socket.io',
+        withCredentials: true,
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 8,
+        reconnectionDelay: 500,
         auth: {
           token: getAccessToken() || ''
         }
       });
+
+      socket.on('connect_error', () => {
+        socket.auth = { token: getAccessToken() || '' };
+      });
+
+      socket.on('disconnect', (reason) => {
+        if (reason === 'io server disconnect') {
+          socketPromise = null;
+        }
+      });
+
       return socket;
     });
   }
