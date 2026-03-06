@@ -62,6 +62,7 @@ npm test
 - Render Blueprint config: `render.yaml`
 - Vercel SPA rewrite config: `vercel.json`
 - Production smoke test: `npm run smoke:prod`
+- Voice mobile/slow-network test: `npm run test:voice:mobile-slow`
 
 ## Environment and Secrets
 
@@ -78,3 +79,5 @@ npm test
 - Product/roadmap docs: `docs/`
 - Backend API contract: `backend/contracts/openapi.yaml`
 - Ops and testing guides: `docs/05_OPERATIONS_RUNBOOK.md`, `docs/07_PRELAUNCH_TESTING.md`
+- PostgreSQL migration plan: `docs/POSTGRES_MIGRATION_PLAN.md`
+- Security key rotation runbook: `docs/SECURITY_KEY_ROTATION.md`

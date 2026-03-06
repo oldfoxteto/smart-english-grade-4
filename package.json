@@ -25,7 +25,8 @@
     "firebase:db:reset-full": "npm run firebase:clean:all && npm run firebase:seed:full",
     "firebase:deploy:firestore": "npx firebase-tools deploy --only firestore --project ai-english-master",
     "firebase:deploy:storage": "npx firebase-tools deploy --only storage --project ai-english-master",
-    "smoke:prod": "node scripts/smoke-production.cjs"
+    "smoke:prod": "node scripts/smoke-production.cjs",
+    "test:voice:mobile-slow": "node scripts/voice-mobile-slow.cjs"
   },
   "overrides": {
     "minimatch": "10.2.1"

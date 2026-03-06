@@ -1,0 +1,45 @@
+name: Production Smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke-prod:
+    name: Smoke Test Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SMOKE_API_BASE_URL: ${{ secrets.SMOKE_API_BASE_URL }}
+      SMOKE_FRONTEND_URL: ${{ secrets.SMOKE_FRONTEND_URL }}
+      SMOKE_TIMEOUT_MS: 20000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production smoke with retries
+        run: |
+          attempts=6
+          for i in $(seq 1 $attempts); do
+            echo "Smoke attempt $i/$attempts"
+            if npm run smoke:prod; then
+              exit 0
+            fi
+            if [ "$i" -lt "$attempts" ]; then
+              echo "Smoke failed, waiting 30s before retry..."
+              sleep 30
+            fi
+          done
+          echo "Smoke failed after $attempts attempts."
+          exit 1

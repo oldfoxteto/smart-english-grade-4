@@ -26,6 +26,7 @@ import Webcam from 'react-webcam';
 import {
   askAiTutor,
   ApiError,
+  getApiHealth,
   getSafetyPolicy,
   getVisionConsent,
   saveVisionConsent,
@@ -112,6 +113,7 @@ const AITutorPage = () => {
   const [loading, setLoading] = useState(false);
   const [latestCorrection, setLatestCorrection] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [aiMode, setAiMode] = useState<'unknown' | 'openai' | 'fallback'>('unknown');
 
   const [showWebcam, setShowWebcam] = useState(false);
   const webcamRef = useRef<Webcam>(null);
@@ -138,6 +140,8 @@ const AITutorPage = () => {
   const recognitionRef = useRef<any>(null);
 
   const voiceSocketRef = useRef<any>(null);
+  const reconnectStartedAtRef = useRef<number | null>(null);
+  const voiceConnectErrorCountRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const baseRoom = currentUser?.id ? `room-${currentUser.id}` : 'room-guest';
   const roomIdRef = useRef(`${baseRoom}-${globalThis.crypto?.randomUUID?.() || Date.now()}`);
@@ -155,6 +159,29 @@ const AITutorPage = () => {
       },
     ]);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getApiHealth()
+      .then((health) => {
+        if (!active) return;
+        setAiMode(health.ai?.mode || 'fallback');
+      })
+      .catch(() => {
+        if (!active) return;
+        setAiMode('unknown');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (aiMode === 'fallback' && activeScenario === 'vision') {
+      setActiveScenario('free');
+      setShowWebcam(false);
+    }
+  }, [aiMode, activeScenario]);
 
   useEffect(() => {
     isCallModeRef.current = isCallMode;
@@ -280,11 +307,39 @@ const AITutorPage = () => {
       .then((socket) => {
         voiceSocketRef.current = socket;
 
-        socket.on('connect', () => setConnected(true));
-        socket.on('disconnect', () => setConnected(false));
-        socket.on('connect_error', () => {
+        socket.on('connect', () => {
+          setConnected(true);
+          const started = reconnectStartedAtRef.current;
+          if (started) {
+            const downtimeMs = Date.now() - started;
+            reconnectStartedAtRef.current = null;
+            void trackAnalyticsEvent({
+              eventName: 'voice_socket_reconnected',
+              metadata: { downtimeMs },
+            }).catch(() => undefined);
+          }
+        });
+        socket.on('disconnect', (reason: string) => {
+          setConnected(false);
+          if (reason !== 'io client disconnect') {
+            reconnectStartedAtRef.current = Date.now();
+            void trackAnalyticsEvent({
+              eventName: 'voice_socket_disconnected',
+              metadata: { reason },
+            }).catch(() => undefined);
+          }
+        });
+        socket.on('connect_error', (error: any) => {
           setConnected(false);
           setErrorText('Voice channel is unavailable right now.');
+          voiceConnectErrorCountRef.current += 1;
+          void trackAnalyticsEvent({
+            eventName: 'voice_socket_connect_error',
+            metadata: {
+              message: String(error?.message || 'unknown'),
+              count: voiceConnectErrorCountRef.current,
+            },
+          }).catch(() => undefined);
         });
         socket.on('voice:pong', (payload: any) => {
           if (!payload?.ts) return;
@@ -508,7 +563,13 @@ const AITutorPage = () => {
     });
   };
 
+  const aiFallbackMode = aiMode === 'fallback';
+
   const handleScenarioChange = (scenarioId: 'free' | 'restaurant' | 'airport' | 'shopping' | 'vision') => {
+    if (scenarioId === 'vision' && aiFallbackMode) {
+      setErrorText('Vision mode requires real AI and is currently unavailable.');
+      return;
+    }
     setActiveScenario(scenarioId);
     if (scenarioId === 'vision') {
       if (!visionAllowed) {
@@ -603,6 +664,7 @@ const AITutorPage = () => {
             <Typography sx={{ fontWeight: 800, lineHeight: 1.1 }}>LISAN Tutor</Typography>
             <Typography sx={{ fontSize: '0.72rem' }}>Secure AI Proxy</Typography>
           </Box>
+          {aiFallbackMode && <Chip size="small" label="Fallback Mode" color="warning" sx={{ fontWeight: 700 }} />}
         </Box>
 
         <Tooltip title="Language">
@@ -636,12 +698,19 @@ const AITutorPage = () => {
             key={scenario.id}
             label={scenario.title}
             onClick={() => handleScenarioChange(scenario.id)}
+            disabled={aiFallbackMode && scenario.id === 'vision'}
             color={activeScenario === scenario.id ? (scenario.id === 'vision' ? 'secondary' : 'primary') : 'default'}
             variant={activeScenario === scenario.id ? 'filled' : 'outlined'}
             sx={{ fontWeight: 700 }}
           />
         ))}
       </Box>
+
+      {aiFallbackMode && (
+        <Alert severity="warning" sx={{ m: 1.5 }}>
+          Fallback mode is active. Vision features are temporarily disabled until real AI is enabled.
+        </Alert>
+      )}
 
       {errorText && (
         <Alert severity="error" sx={{ m: 1.5 }}>

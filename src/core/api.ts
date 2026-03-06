@@ -147,6 +147,11 @@ export type AiTutorEventName =
   | 'ai_tutor_retry'
   | 'ai_tutor_cooldown_hit'
   | 'ai_tutor_daily_cap_hit';
+export type VoiceSocketEventName =
+  | 'voice_socket_connect_error'
+  | 'voice_socket_disconnected'
+  | 'voice_socket_reconnected';
+export type AnalyticsEventName = AiTutorEventName | VoiceSocketEventName;
 
 export type AiScenarioFilter = 'all' | 'daily' | 'travel' | 'work' | 'migration';
 
@@ -234,6 +239,15 @@ export interface OpsRoutesResponse {
   limit: number;
   routes: OpsRouteSlo[];
   topFailingRoutes: OpsTopFailingRoute[];
+}
+export interface ApiHealthResponse {
+  status: 'healthy';
+  ts: string;
+  version: string;
+  ai?: {
+    configured: boolean;
+    mode: 'openai' | 'fallback';
+  };
 }
 
 // Progress & SRS (server-backed)
@@ -519,7 +533,7 @@ export async function saveVisionConsent(payload: { allowVision: boolean; guardia
 }
 
 export async function trackAnalyticsEvent(payload: {
-  eventName: AiTutorEventName;
+  eventName: AnalyticsEventName;
   source?: string;
   metadata?: Record<string, unknown>;
 }) {
@@ -531,6 +545,10 @@ export async function trackAnalyticsEvent(payload: {
       metadata: payload.metadata || {},
     }),
   });
+}
+
+export async function getApiHealth() {
+  return apiRequest<ApiHealthResponse>('/health', {}, { auth: false, retryOn401: false });
 }
 
 export async function getAnalyticsSummary(hours = 24, scenario: AiScenarioFilter = 'all') {
