@@ -322,6 +322,7 @@ const AITutorPage = () => {
 
         socket.on('connect', () => {
           setConnected(true);
+          setErrorText(null);
           const started = reconnectStartedAtRef.current;
           if (started) {
             const downtimeMs = Date.now() - started;
@@ -358,6 +359,22 @@ const AITutorPage = () => {
           if (!payload?.ts) return;
           setLatencyMs(Math.max(0, Date.now() - Number(payload.ts)));
         });
+        socket.on('voice:status', (payload: any) => {
+          const mode = String(payload?.mode || '');
+          if (mode === 'mock-transcript') {
+            setAiMode('fallback');
+          }
+          if (payload?.busy === false && !streaming) {
+            setErrorText(null);
+          }
+        });
+        socket.on('voice:error', (payload: any) => {
+          const message = String(payload?.message || 'Voice channel error.');
+          setErrorText(message);
+          if (String(payload?.code || '').includes('VOICE_')) {
+            stopStreaming();
+          }
+        });
         socket.on('voice:limit', (payload: any) => {
           const resetInMs = Number(payload?.resetInMs || 60_000);
           setVoiceLimitedTill(Date.now() + resetInMs);
@@ -381,7 +398,7 @@ const AITutorPage = () => {
         });
       })
       .catch(() => setConnected(false));
-  }, [activeLang.ttsLang, activeScenario, speakVoice, stopStreaming]);
+  }, [activeLang.ttsLang, activeScenario, speakVoice, stopStreaming, streaming]);
 
   const startStreaming = useCallback(async () => {
     if (streaming) return;

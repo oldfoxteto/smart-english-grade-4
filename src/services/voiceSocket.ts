@@ -41,7 +41,7 @@ export function getVoiceSocket(): Promise<Socket> {
       });
 
       socket.on('disconnect', (reason) => {
-        if (reason === 'io server disconnect') {
+        if (reason === 'io server disconnect' || reason === 'transport close') {
           socketInstance = null;
           socketPromise = null;
         }

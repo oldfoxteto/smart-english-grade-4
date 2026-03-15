@@ -26,6 +26,7 @@ const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
+const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
 
 // ---------------------------------------------------------------------------
 // DB setup (SQLite)
@@ -178,6 +179,9 @@ const voiceRuntimeStatus = () => ({
   configured: Boolean(OPENAI_API_KEY),
   mode: OPENAI_API_KEY ? 'openai-realtime-proxy' : 'mock-transcript',
   maxFramesPerMinute: MAX_FRAMES_PER_MIN,
+  maxFrameBytes: MAX_VOICE_FRAME_BYTES,
+  supportsRealtimeTranscription: Boolean(OPENAI_API_KEY),
+  fallbackTranscript: !OPENAI_API_KEY,
 });
 const tutorFallbackReply = (hasImage) => (
   hasImage
@@ -1789,6 +1793,9 @@ app.get('/api/v1/health', (_req, res) => {
 // Realtime voice placeholder (Socket.IO)
 // ---------------------------------------------------------------------------
 const voiceUsage = new Map(); // userId -> { start: number, count: number }
+const emitVoiceError = (socket, code, message, extra = {}) => {
+  socket.emit('voice:error', { code, message, ...extra, ts: Date.now() });
+};
 
 io.use((socket, next) => {
   try {
@@ -1811,6 +1818,12 @@ io.on('connection', (socket) => {
     socket.to(safeRoom).emit('voice:peer-joined', { peerId: socket.id, userId: socket.userId });
   });
 
+  socket.on('voice:leave', (roomId) => {
+    const safeRoom = roomId || `room-${socket.userId || 'anon'}`;
+    socket.leave(safeRoom);
+    socket.emit('voice:status', { ...voiceRuntimeStatus(), joined: false });
+  });
+
   socket.on('voice:ping', (payload) => {
     socket.emit('voice:pong', { ts: payload?.ts || Date.now() });
   });
@@ -1819,6 +1832,10 @@ io.on('connection', (socket) => {
   socket.on('voice:frame', ({ roomId, frame }) => {
     if (!socket.userId) return;
     const safeRoom = roomId || `room-${socket.userId}`;
+    if (typeof frame !== 'string' || frame.length === 0) {
+      emitVoiceError(socket, 'INVALID_FRAME', 'Voice frame payload is empty.');
+      return;
+    }
 
     // Per-user simple rate limit (frames/minute)
     const now = Date.now();
@@ -1832,6 +1849,16 @@ io.on('connection', (socket) => {
     if (usage.count > MAX_FRAMES_PER_MIN) {
       const resetInMs = Math.max(0, 60_000 - (now - usage.start));
       socket.emit('voice:limit', { resetInMs, maxPerMinute: MAX_FRAMES_PER_MIN });
+      emitVoiceError(socket, 'VOICE_RATE_LIMIT', 'Voice frame limit reached for this minute.', { resetInMs });
+      return;
+    }
+
+    const estimatedBytes = Math.ceil((frame.length * 3) / 4);
+    if (estimatedBytes > MAX_VOICE_FRAME_BYTES) {
+      emitVoiceError(socket, 'VOICE_FRAME_TOO_LARGE', 'Voice frame is too large for processing.', {
+        estimatedBytes,
+        maxFrameBytes: MAX_VOICE_FRAME_BYTES,
+      });
       return;
     }
 
@@ -1850,10 +1877,20 @@ io.on('connection', (socket) => {
     }
 
     // Avoid overlap per socket
-    if (socket.sttInFlight) return;
+    if (socket.sttInFlight) {
+      socket.emit('voice:status', { ...voiceRuntimeStatus(), busy: true });
+      return;
+    }
     socket.sttInFlight = true;
 
-    const buf = Buffer.from(frame, 'base64');
+    let buf;
+    try {
+      buf = Buffer.from(frame, 'base64');
+    } catch {
+      emitVoiceError(socket, 'VOICE_FRAME_DECODE_FAILED', 'Voice frame could not be decoded.');
+      socket.sttInFlight = false;
+      return;
+    }
     openai.audio.transcriptions.create({
       file: buf,
       model: 'whisper-1',
@@ -1883,8 +1920,12 @@ io.on('connection', (socket) => {
       }
     }).catch((e) => {
       console.error('STT/TTS error', e.message);
+      emitVoiceError(socket, 'VOICE_UPSTREAM_FAILED', 'Realtime voice service is temporarily unavailable.', {
+        detail: String(e.message || 'unknown'),
+      });
     }).finally(() => {
       socket.sttInFlight = false;
+      socket.emit('voice:status', { ...voiceRuntimeStatus(), busy: false });
     });
   });
 
