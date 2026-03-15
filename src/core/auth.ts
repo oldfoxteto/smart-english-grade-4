@@ -1,7 +1,6 @@
-const TOKEN_KEY = "lisan_access_token";
-const REFRESH_TOKEN_KEY = "lisan_refresh_token";
 const USER_KEY = "lisan_current_user";
 const ONBOARDING_KEY = "lisan_onboarding_v1";
+const AUTH_CHANGE_EVENT = "lisan-auth-change";
 
 export type AuthUser = {
   id: string;
@@ -19,13 +18,19 @@ export type OnboardingProfile = {
   completedAt: string;
 };
 
-export function saveTokens(token: string, refreshToken: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+export function saveTokens(_token?: string, _refreshToken?: string) {
+  // Tokens are stored in httpOnly cookies on the server.
+}
+
+function emitAuthChange() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+  }
 }
 
 export function saveCurrentUser(user: AuthUser) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  emitAuthChange();
 }
 
 export function getCurrentUser(): AuthUser | null {
@@ -43,16 +48,16 @@ export function isAdminUser() {
   return Boolean(user?.roles?.includes("admin"));
 }
 
-export function setAccessToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
+export function setAccessToken(_token: string) {
+  // Access tokens are stored in httpOnly cookies on the server.
 }
 
 export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return null;
 }
 
 export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return null;
 }
 
 export function saveOnboardingProfile(profile: OnboardingProfile) {
@@ -74,12 +79,22 @@ export function isOnboardingCompleted() {
 }
 
 export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(ONBOARDING_KEY);
+  emitAuthChange();
 }
 
 export function isAuthenticated() {
-  return Boolean(getAccessToken());
+  return Boolean(getCurrentUser());
+}
+
+export function subscribeAuthChange(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  window.addEventListener(AUTH_CHANGE_EVENT, listener);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, listener);
+  };
 }

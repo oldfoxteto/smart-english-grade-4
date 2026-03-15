@@ -3,7 +3,6 @@
 
 import type { Socket } from 'socket.io-client';
 import { API_BASE_URL } from '../core/api';
-import { getAccessToken } from '../core/auth';
 
 let socketPromise: Promise<Socket> | null = null;
 let socketInstance: Socket | null = null;
@@ -22,10 +21,7 @@ export function destroyVoiceSocket() {
 }
 
 export function getVoiceSocket(): Promise<Socket> {
-  const token = getAccessToken() || '';
-
   if (socketInstance) {
-    socketInstance.auth = { token };
     if (!socketInstance.connected) {
       socketInstance.connect();
     }
@@ -43,19 +39,17 @@ export function getVoiceSocket(): Promise<Socket> {
         reconnection: true,
         reconnectionAttempts: 8,
         reconnectionDelay: 500,
-        auth: {
-          token
-        }
+        auth: {}
       });
       socketInstance = socket;
 
       socket.on('connect_error', () => {
-        socket.auth = { token: getAccessToken() || '' };
+        socket.auth = {};
       });
 
       socket.on('disconnect', (reason) => {
         if (reason === 'io server disconnect') {
-          socket.auth = { token: getAccessToken() || '' };
+          socket.auth = {};
           socket.connect();
         }
       });
@@ -64,7 +58,7 @@ export function getVoiceSocket(): Promise<Socket> {
     });
   }
   return socketPromise.then((socket) => {
-    socket.auth = { token: getAccessToken() || '' };
+    socket.auth = {};
     return socket;
   });
 }

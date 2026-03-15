@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { CssBaseline } from '@mui/material';
@@ -32,13 +32,15 @@ const SettingsPage = lazy(() =>
 );
 const AdvancedLearningHub = lazy(() => import('./pages/AdvancedLearningHub'));
 
-import { isAuthenticated, isAdminUser, isOnboardingCompleted } from './core/auth';
+import { getCurrentUser, isOnboardingCompleted, subscribeAuthChange } from './core/auth';
+import { restoreSession } from './core/api';
 import { NotificationProvider } from './core/NotificationContext';
 
 function App() {
   const { i18n } = useTranslation();
-  const authed = isAuthenticated();
-  const isAdmin = isAdminUser();
+  const [authReady, setAuthReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const onboarded = isOnboardingCompleted();
 
   const direction = i18n.language === 'ar' ? 'rtl' : 'ltr';
@@ -84,6 +86,48 @@ function App() {
     document.body.dir = direction;
     document.body.style.textAlign = direction === 'rtl' ? 'right' : 'left';
   }, [direction, i18n.language]);
+
+  useEffect(() => {
+    let active = true;
+    const syncFromStorage = () => {
+      const user = getCurrentUser();
+      setAuthed(Boolean(user));
+      setIsAdmin(Boolean(user?.roles?.includes('admin')));
+    };
+
+    const unsubscribe = subscribeAuthChange(() => {
+      if (!active) return;
+      syncFromStorage();
+    });
+
+    void restoreSession()
+      .then((session) => {
+        if (!active) return;
+        const user = session?.user || getCurrentUser();
+        setAuthed(Boolean(user));
+        setIsAdmin(Boolean(user?.roles?.includes('admin')));
+      })
+      .catch(() => {
+        if (!active) return;
+        const user = getCurrentUser();
+        setAuthed(Boolean(user));
+        setIsAdmin(Boolean(user?.roles?.includes('admin')));
+      })
+      .finally(() => {
+        if (active) {
+          setAuthReady(true);
+        }
+      });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  if (!authReady) {
+    return null;
+  }
 
   const defaultRedirect = authed ? (onboarded ? '/home' : '/onboarding') : '/login';
 

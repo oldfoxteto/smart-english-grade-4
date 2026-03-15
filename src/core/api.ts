@@ -1,5 +1,7 @@
 ﻿import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from './auth';
 
+import { saveCurrentUser } from './auth';
+
 export interface AuthPayload {
   email: string;
   password: string;
@@ -8,8 +10,6 @@ export interface AuthPayload {
 }
 
 export interface AuthResponse {
-  token: string;
-  refreshToken: string;
   user: {
     id: string;
     email: string;
@@ -465,16 +465,13 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 
   refreshInFlight = (async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      clearTokens();
-      return null;
-    }
-
+    // Legacy hooks kept as no-ops after moving tokens into httpOnly cookies.
+    const legacyRefreshToken = getRefreshToken();
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include',
+      body: legacyRefreshToken ? JSON.stringify({ refreshToken: legacyRefreshToken }) : undefined,
     });
 
     if (!response.ok) {
@@ -482,9 +479,10 @@ async function refreshAccessToken(): Promise<string | null> {
       return null;
     }
 
-    const payload = (await response.json()) as { token: string; refreshToken: string };
-    saveTokens(payload.token, payload.refreshToken);
-    return payload.token;
+    const payload = (await response.json()) as AuthResponse;
+    saveTokens();
+    saveCurrentUser(payload.user);
+    return 'cookie-session-restored';
   })();
 
   try {
@@ -505,6 +503,7 @@ async function apiRequest<T>(
   const token = auth ? getAccessToken() : null;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: 'include',
     headers: buildHeaders(token || undefined, init.headers),
   });
 
@@ -513,6 +512,7 @@ async function apiRequest<T>(
     if (renewedToken) {
       const retry = await fetch(`${API_BASE_URL}${path}`, {
         ...init,
+        credentials: 'include',
         headers: buildHeaders(renewedToken, init.headers),
       });
 
@@ -556,12 +556,35 @@ export async function login(payload: AuthPayload): Promise<AuthResponse> {
 }
 
 export async function logout() {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return;
   await apiRequest<void>('/auth/logout', {
     method: 'POST',
-    body: JSON.stringify({ refreshToken }),
   }, { auth: false, retryOn401: false });
+}
+
+export async function restoreSession(): Promise<AuthResponse | null> {
+  try {
+    const session = await apiRequest<AuthResponse>('/auth/session', {
+      method: 'GET',
+    }, { auth: false, retryOn401: false });
+    saveCurrentUser(session.user);
+    return session;
+  } catch {
+    try {
+      const refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        clearTokens();
+        return null;
+      }
+      const session = await apiRequest<AuthResponse>('/auth/session', {
+        method: 'GET',
+      }, { auth: false, retryOn401: false });
+      saveCurrentUser(session.user);
+      return session;
+    } catch {
+      clearTokens();
+      return null;
+    }
+  }
 }
 
 // ---------------- Progress & SRS ----------------

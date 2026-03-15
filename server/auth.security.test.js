@@ -14,9 +14,14 @@ function uniqueEmail(prefix) {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}@example.com`;
 }
 
+function findCookie(setCookieHeaders, cookieName) {
+  return (setCookieHeaders || []).find((entry) => String(entry).startsWith(`${cookieName}=`));
+}
+
 async function registerUser(prefix = 'security') {
+  const agent = request.agent(app);
   const email = uniqueEmail(prefix);
-  const response = await request(app)
+  const response = await agent
     .post('/api/v1/auth/register')
     .send({
       email,
@@ -24,7 +29,7 @@ async function registerUser(prefix = 'security') {
       displayName: 'Security Learner',
     });
 
-  return response;
+  return { agent, response };
 }
 
 afterAll((done) => {
@@ -55,54 +60,69 @@ test('rejects weak passwords on registration', async () => {
   expect(response.body.error).toBe('WEAK_PASSWORD');
 });
 
-test('rotates refresh tokens and blocks reuse of the old token', async () => {
-  const registerResponse = await registerUser('rotate');
-  expect(registerResponse.status).toBe(201);
+test('rotates refresh cookies and blocks reuse of the old cookie', async () => {
+  const { agent, response } = await registerUser('rotate');
+  expect(response.status).toBe(201);
+  expect(response.body.refreshToken).toBeUndefined();
 
-  const firstRefreshToken = registerResponse.body.refreshToken;
-  const firstRefresh = await request(app)
-    .post('/api/v1/auth/refresh')
-    .send({ refreshToken: firstRefreshToken });
+  const firstRefreshCookie = findCookie(response.headers['set-cookie'], 'lisan_refresh');
+  expect(firstRefreshCookie).toBeTruthy();
 
+  const firstRefresh = await agent.post('/api/v1/auth/refresh').send({});
   expect(firstRefresh.status).toBe(200);
-  expect(firstRefresh.body.refreshToken).toBeTruthy();
-  expect(firstRefresh.body.refreshToken).not.toBe(firstRefreshToken);
+  const rotatedRefreshCookie = findCookie(firstRefresh.headers['set-cookie'], 'lisan_refresh');
+  expect(rotatedRefreshCookie).toBeTruthy();
+  expect(rotatedRefreshCookie).not.toBe(firstRefreshCookie);
 
   const replayRefresh = await request(app)
     .post('/api/v1/auth/refresh')
-    .send({ refreshToken: firstRefreshToken });
+    .set('Cookie', firstRefreshCookie);
 
   expect(replayRefresh.status).toBe(401);
   expect(replayRefresh.body.error).toBe('INVALID_REFRESH');
 });
 
-test('logout revokes the current refresh token', async () => {
-  const registerResponse = await registerUser('logout');
-  expect(registerResponse.status).toBe(201);
+test('logout revokes the current refresh cookie', async () => {
+  const { agent, response } = await registerUser('logout');
+  expect(response.status).toBe(201);
 
-  const refreshToken = registerResponse.body.refreshToken;
-  const logoutResponse = await request(app)
-    .post('/api/v1/auth/logout')
-    .send({ refreshToken });
+  const refreshCookie = findCookie(response.headers['set-cookie'], 'lisan_refresh');
+  expect(refreshCookie).toBeTruthy();
 
+  const logoutResponse = await agent.post('/api/v1/auth/logout').send({});
   expect(logoutResponse.status).toBe(204);
 
   const refreshResponse = await request(app)
     .post('/api/v1/auth/refresh')
-    .send({ refreshToken });
+    .set('Cookie', refreshCookie);
 
   expect(refreshResponse.status).toBe(401);
   expect(refreshResponse.body.error).toBe('INVALID_REFRESH');
 });
 
-test('refresh token cannot be used as bearer token on protected routes', async () => {
-  const registerResponse = await registerUser('token_type');
-  expect(registerResponse.status).toBe(201);
+test('refresh cookie cannot be used as bearer token on protected routes', async () => {
+  const { response } = await registerUser('token_type');
+  expect(response.status).toBe(201);
 
-  const response = await request(app)
+  const refreshCookie = findCookie(response.headers['set-cookie'], 'lisan_refresh');
+  const refreshToken = String(refreshCookie).split(';')[0].split('=')[1];
+
+  const protectedResponse = await request(app)
     .get('/api/v1/progress')
-    .set('Authorization', `Bearer ${registerResponse.body.refreshToken}`);
+    .set('Authorization', `Bearer ${refreshToken}`);
 
-  expect(response.status).toBe(401);
-  expect(response.body.error).toBe('INVALID_TOKEN_TYPE');
+  expect(protectedResponse.status).toBe(401);
+  expect(protectedResponse.body.error).toBe('INVALID_TOKEN_TYPE');
+});
+
+test('session endpoint restores user from access cookie without exposing tokens', async () => {
+  const { agent, response } = await registerUser('session');
+  expect(response.status).toBe(201);
+  expect(response.body.token).toBeUndefined();
+  expect(response.body.refreshToken).toBeUndefined();
+
+  const sessionResponse = await agent.get('/api/v1/auth/session');
+  expect(sessionResponse.status).toBe(200);
+  expect(sessionResponse.body.user.email).toMatch(/@example\.com$/);
+  expect(sessionResponse.body.token).toBeUndefined();
 });

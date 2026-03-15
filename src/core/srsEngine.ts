@@ -1,4 +1,4 @@
-import { getAccessToken } from './auth';
+import { isAuthenticated } from './auth';
 import { reviewSrsItem, getDueSrsItems } from './api';
 
 export interface SRSItem {
@@ -55,8 +55,7 @@ export function saveSRSState(state: SRSState) {
  */
 export async function reviewItem(itemId: string, itemType: 'vocabulary' | 'grammar', isCorrect: boolean, timeTakenSeconds: number) {
     // Try remote first if authenticated
-    const token = getAccessToken();
-    if (isBrowser() && token) {
+    if (isBrowser() && isAuthenticated()) {
         try {
             const remote = await reviewSrsItem({ itemId, itemType, isCorrect, timeTakenSeconds });
             return remote as SRSItem;
@@ -126,8 +125,7 @@ export async function reviewItem(itemId: string, itemType: 'vocabulary' | 'gramm
 }
 
 export async function getDueReviews(): Promise<SRSItem[]> {
-    const token = getAccessToken();
-    if (isBrowser() && token) {
+    if (isBrowser() && isAuthenticated()) {
         try {
             const items = await getDueSrsItems();
             return items as SRSItem[];

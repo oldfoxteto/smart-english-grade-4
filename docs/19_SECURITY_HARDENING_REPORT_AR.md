@@ -15,6 +15,8 @@
 - تم تفعيل تدوير `refresh token` عند كل عملية `refresh`
 - تم منع إعادة استخدام `refresh token` القديم بعد التدوير
 - تم إضافة endpoint فعلي لـ `logout` مع إبطال `refresh token`
+- تم نقل التوكنات من `localStorage` إلى `httpOnly cookies`
+- لم تعد الواجهة تستقبل `access token` أو `refresh token` داخل JSON responses
 
 ### 2. منع إساءة استخدام التوكنات
 - تم منع استخدام `refresh token` كتوكن وصول على الـ API
@@ -36,6 +38,7 @@
 - تم تقليل مخاطر `CORS` عبر matcher واضح للأصول المسموح بها
 - تم تقليل مخاطر body abuse عبر حد JSON مضبوط من متغير بيئة
 - تم تحويل توليد المعرّفات إلى `crypto.randomUUID()`
+- تم نقل الجلسة في الواجهة إلى استعادة آمنة عبر cookie + endpoint session/refresh بدل الاعتماد على توكنات مخزنة
 
 ### 5. الاختبارات الأمنية المضافة
 تمت إضافة [auth.security.test.js](D:/sara/smart-english-grade-4/server/auth.security.test.js) لتغطية:
@@ -44,24 +47,29 @@
 - منع إعادة استخدام التوكن القديم
 - إبطال التوكن عند `logout`
 - منع استخدام `refresh token` على المسارات المحمية
+- استعادة الجلسة من cookie بدون كشف التوكنات للواجهة
 
 ## ما تم التحقق منه بالأوامر
 - `npm audit` في الجذر: نظيف
 - `npm audit` في `backend/`: نظيف
 - `npm test -- --runInBand auth.security.test.js` داخل `server/`: ناجح
 - `npm run type-check`: ناجح
+- `npm run test:run`: ناجح
+- `npm run build`: ناجح
+- `npm run test:e2e`: ناجح
+- `npm run lint`: ناجح مع تحذيرين قديمين فقط في `scripts`
 
 ## المخاطر المتبقية بصراحة
-- التوكنات في الواجهة ما زالت محفوظة في `localStorage` داخل [auth.ts](D:/sara/smart-english-grade-4/src/core/auth.ts)
-- هذا يعني أن أي `XSS` حقيقي مستقبلي قد يعرّض التوكنات للسرقة
-- الحل الأكثر أمانًا مستقبلًا: نقل `refresh token` على الأقل إلى `httpOnly secure cookies`
+- لم تعد التوكنات محفوظة في `localStorage`
+- ما بقي في `localStorage` هو بيانات غير سرية نسبيًا مثل المستخدم الحالي وبيانات onboarding لأغراض UX
+- ما زال `XSS` خطرًا عامًا على أي SPA، لذلك يبقى تقوية `Content-Security-Policy` خطوة مهمة تالية
 
 ## التوصية التالية الأعلى أولوية
-1. نقل المصادقة من `localStorage` إلى `httpOnly cookies`
-2. إضافة `Content-Security-Policy` مخصص بدل الإعداد العام فقط
-3. إضافة مراقبة لمحاولات الدخول الفاشلة والـ abuse events
-4. إضافة اختبار تكاملي أمني لمسار `server/` داخل CI
+1. إضافة `Content-Security-Policy` مخصص بدل الإعداد العام فقط
+2. إضافة مراقبة لمحاولات الدخول الفاشلة والـ abuse events
+3. إضافة اختبار تكاملي أمني لمسار `server/` داخل CI
+4. التفكير لاحقًا في تقليل حتى بيانات `currentUser` المحلية إذا أردنا تشددًا أعلى جدًا
 
 ## الحكم الحالي
 المشروع أصبح أكثر أمانًا بشكل واضح من السابق، خاصة في إدارة الجلسات والتوكنات.  
-لكن إذا كان الهدف إطلاقًا عامًا واسعًا، فما زال بند `httpOnly cookies` هو أهم تحسين أمني متبقٍ.
+حاليًا أقوى فجوة أمنية كبيرة تم إغلاقها بالفعل، وهي سرقة التوكنات من `localStorage`.

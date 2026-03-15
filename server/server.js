@@ -29,9 +29,13 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
 const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
-const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '1h';
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
 const REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || '7d';
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '5mb';
+const ACCESS_COOKIE_NAME = process.env.ACCESS_COOKIE_NAME || 'lisan_access';
+const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || 'lisan_refresh';
+const COOKIE_SAME_SITE = process.env.COOKIE_SAME_SITE || 'strict';
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
 if (JWT_SECRET === 'dev-secret' || JWT_SECRET.length < 32) {
   const message = 'JWT_SECRET must be at least 32 characters and must not use the default development secret.';
@@ -187,7 +191,47 @@ const parseDurationMs = (value, fallbackMs) => {
   const multipliers = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
   return amount * multipliers[unit];
 };
+const parseCookies = (headerValue) => String(headerValue || '')
+  .split(';')
+  .map((part) => part.trim())
+  .filter(Boolean)
+  .reduce((acc, part) => {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex === -1) return acc;
+    const key = part.slice(0, separatorIndex).trim();
+    const value = decodeURIComponent(part.slice(separatorIndex + 1).trim());
+    if (key) acc[key] = value;
+    return acc;
+  }, {});
+const getCookieValue = (cookieHeader, name) => parseCookies(cookieHeader)[name] || null;
 const refreshTokenTtlMs = parseDurationMs(REFRESH_TOKEN_TTL, 7 * 24 * 60 * 60 * 1000);
+const accessTokenTtlMs = parseDurationMs(ACCESS_TOKEN_TTL, 15 * 60 * 1000);
+
+function buildCookieOptions(maxAgeMs, extra = {}) {
+  return {
+    httpOnly: true,
+    secure: IS_PRODUCTION,
+    sameSite: COOKIE_SAME_SITE,
+    domain: COOKIE_DOMAIN,
+    path: '/',
+    maxAge: maxAgeMs,
+    ...extra,
+  };
+}
+
+function applyAuthCookies(res, tokens) {
+  res.cookie(ACCESS_COOKIE_NAME, tokens.token, buildCookieOptions(accessTokenTtlMs));
+  res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, buildCookieOptions(refreshTokenTtlMs, { path: '/api/v1/auth' }));
+}
+
+function clearAuthCookies(res) {
+  const accessOptions = buildCookieOptions(accessTokenTtlMs);
+  const refreshOptions = buildCookieOptions(refreshTokenTtlMs, { path: '/api/v1/auth' });
+  delete accessOptions.maxAge;
+  delete refreshOptions.maxAge;
+  res.clearCookie(ACCESS_COOKIE_NAME, accessOptions);
+  res.clearCookie(REFRESH_COOKIE_NAME, refreshOptions);
+}
 const classifyAiError = (error) => {
   const status = Number(error?.status || 0);
   const code = String(error?.code || error?.type || '').toLowerCase();
@@ -760,9 +804,21 @@ async function revokeRefreshToken(refreshToken) {
   return true;
 }
 
+function buildUserPayload(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    status: 'active',
+    roles: ['user'],
+  };
+}
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const tokenFromHeader = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const tokenFromCookie = getCookieValue(req.headers.cookie, ACCESS_COOKIE_NAME);
+  const token = tokenFromHeader || tokenFromCookie;
   if (!token) return res.status(401).json({ error: 'UNAUTHENTICATED' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
@@ -853,7 +909,8 @@ app.post('/api/v1/auth/register', authLimiter, async (req, res) => {
     );
     await dbRun(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
     const tokens = await issueTokens(id);
-    res.status(201).json({ user: { id, email: normalizedEmail, displayName: safeDisplayName, status: 'active', roles: ['user'] }, ...tokens });
+    applyAuthCookies(res, tokens);
+    res.status(201).json({ user: { id, email: normalizedEmail, displayName: safeDisplayName, status: 'active', roles: ['user'] } });
   } catch (err) {
     if (String(err?.message || '').includes('UNIQUE')) return res.status(409).json({ error: 'EMAIL_EXISTS' });
     return res.status(500).json({ error: 'DB_ERROR' });
@@ -873,27 +930,45 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
     }
     const tokens = await issueTokens(row.id);
-    res.json({ user: { id: row.id, email: row.email, displayName: row.displayName, status: 'active', roles: ['user'] }, ...tokens });
+    applyAuthCookies(res, tokens);
+    res.json({ user: buildUserPayload(row) });
   } catch {
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 });
 
 app.post('/api/v1/auth/refresh', authLimiter, async (req, res) => {
-  const refreshToken = String(req.body?.refreshToken || '').trim();
+  const refreshToken = String(req.body?.refreshToken || getCookieValue(req.headers.cookie, REFRESH_COOKIE_NAME) || '').trim();
   if (!refreshToken) return res.status(400).json({ error: 'REFRESH_REQUIRED' });
   try {
     await cleanupExpiredRefreshTokens();
     const payload = await verifyRefreshTokenRecord(refreshToken);
     const tokens = await issueTokens(payload.sub, payload.jti);
-    return res.json(tokens);
+    const userRow = await dbGet(`SELECT id, email, displayName FROM users WHERE id = ?`, [payload.sub]);
+    if (!userRow) {
+      return res.status(401).json({ error: 'INVALID_REFRESH' });
+    }
+    applyAuthCookies(res, tokens);
+    return res.json({ user: buildUserPayload(userRow) });
   } catch {
+    clearAuthCookies(res);
     return res.status(401).json({ error: 'INVALID_REFRESH' });
   }
 });
 
+app.get('/api/v1/auth/session', authMiddleware, async (req, res) => {
+  try {
+    const row = await dbGet(`SELECT id, email, displayName FROM users WHERE id = ?`, [req.userId]);
+    if (!row) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+    return res.json({ user: buildUserPayload(row) });
+  } catch {
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
 app.post('/api/v1/auth/logout', authLimiter, async (req, res) => {
-  const refreshToken = String(req.body?.refreshToken || '').trim();
+  const refreshToken = String(req.body?.refreshToken || getCookieValue(req.headers.cookie, REFRESH_COOKIE_NAME) || '').trim();
+  clearAuthCookies(res);
   if (!refreshToken) return res.status(204).end();
   try {
     await revokeRefreshToken(refreshToken);
@@ -1934,7 +2009,9 @@ const emitVoiceError = (socket, code, message, extra = {}) => {
 
 io.use((socket, next) => {
   try {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const token = socket.handshake.auth?.token
+      || socket.handshake.query?.token
+      || getCookieValue(socket.handshake.headers.cookie, ACCESS_COOKIE_NAME);
     if (!token) return next(new Error('UNAUTHORIZED'));
     const payload = jwt.verify(token, JWT_SECRET);
     if (payload.type === 'refresh') return next(new Error('INVALID_TOKEN_TYPE'));

@@ -2,8 +2,6 @@
 
 async function bootstrapAuthenticatedUser(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('lisan_access_token', 'test-token');
-    localStorage.setItem('lisan_refresh_token', 'test-refresh');
     localStorage.setItem(
       'lisan_current_user',
       JSON.stringify({ id: 'u-test', email: 'student@example.com', displayName: 'Student', roles: ['user'] })
@@ -22,6 +20,26 @@ async function bootstrapAuthenticatedUser(page: Page) {
 }
 
 async function mockApi(page: Page) {
+  await page.route(/\/api\/v1\/auth\/session$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user: { id: 'u-test', email: 'student@example.com', displayName: 'Student', status: 'active', roles: ['user'] },
+      }),
+    });
+  });
+
+  await page.route(/\/api\/v1\/auth\/refresh$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user: { id: 'u-test', email: 'student@example.com', displayName: 'Student', status: 'active', roles: ['user'] },
+      }),
+    });
+  });
+
   await page.route(/\/api\/v1\/analytics\/events$/, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
   });

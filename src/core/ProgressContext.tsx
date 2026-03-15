@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useNotification } from './NotificationContext';
 import { useMissions } from './MissionContext';
 import { fetchProgress, saveProgressRemote, type RemoteProgress } from './api';
-import { isAuthenticated } from './auth';
+import { isAuthenticated, subscribeAuthChange } from './auth';
 
 interface Progress {
     vocabularyCompleted: number[];
@@ -40,11 +40,15 @@ const ProgressContext = createContext<ProgressContextType | undefined>(undefined
 export const ProgressProvider = ({ children }: { children: ReactNode }) => {
     const { notify } = useNotification();
     const { missions, completeMission } = useMissions();
-    const authed = useMemo(() => isAuthenticated(), []);
+    const [authed, setAuthed] = useState(() => isAuthenticated());
     const [progress, setProgress] = useState<Progress>(() => {
         const saved = localStorage.getItem('smartEnglishProgress');
         return saved ? JSON.parse(saved) : defaultProgress;
     });
+
+    useEffect(() => subscribeAuthChange(() => {
+        setAuthed(isAuthenticated());
+    }), []);
 
     // Hydrate from server when authenticated
     useEffect(() => {

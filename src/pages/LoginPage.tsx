@@ -14,7 +14,7 @@ import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded';
 import { motion } from 'framer-motion';
 import { useProgress } from '../core/ProgressContext';
 import { login, register } from '../core/api';
-import { isOnboardingCompleted, saveCurrentUser, saveTokens } from '../core/auth';
+import { isOnboardingCompleted, saveCurrentUser } from '../core/auth';
 
 const MotionBox = motion(Box);
 
@@ -157,7 +157,6 @@ const LoginPage = () => {
       };
 
       const response = mode === 'register' ? await register(payload) : await login(payload);
-      saveTokens(response.token, response.refreshToken);
       saveCurrentUser(response.user);
       setUsername(response.user.displayName || displayName || 'Student');
       const target = isOnboardingCompleted() ? '/home' : '/onboarding';

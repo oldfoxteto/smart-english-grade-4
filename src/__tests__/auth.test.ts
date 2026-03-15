@@ -14,12 +14,12 @@ describe('auth storage', () => {
     clearTokens();
   });
 
-  it('persists access/refresh tokens and auth state', () => {
+  it('does not persist tokens in browser storage when using httpOnly cookies', () => {
     saveTokens('access-token', 'refresh-token');
 
-    expect(getAccessToken()).toBe('access-token');
-    expect(getRefreshToken()).toBe('refresh-token');
-    expect(isAuthenticated()).toBe(true);
+    expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
+    expect(isAuthenticated()).toBe(false);
   });
 
   it('persists and reads current user', () => {
@@ -36,5 +36,6 @@ describe('auth storage', () => {
       displayName: 'User',
       roles: ['learner'],
     });
+    expect(isAuthenticated()).toBe(true);
   });
 });
