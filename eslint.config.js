@@ -19,6 +19,7 @@ export default defineConfig([
     'src/components/notifications/SocialNotifications.tsx',
     'src/components/testing/MobileTestingGuide.tsx',
     'src/components/ui/AnimationSystem.tsx',
+    'src/pages/archive/**',
     'src/pages/LessonsPage.tsx',
     'src/pages/PracticePageSimple.tsx',
     'src/mobile/**',

@@ -237,6 +237,158 @@ const DEFAULT_USER_SETTINGS = {
   },
 };
 
+const GENERATED_LESSON_THEMES = [
+  'Classroom Items',
+  'Daily Routine',
+  'Food and Drinks',
+  'Clothes',
+  'Rooms in the House',
+  'Weather',
+  'School Subjects',
+  'Days and Months',
+  'Jobs',
+  'Places in Town',
+  'Animals',
+  'Body and Feelings',
+  'Hobbies',
+  'Transport',
+  'Shopping and Money',
+];
+
+function getUnitNumberForLesson(lessonNumber) {
+  if (lessonNumber <= 0) return 1;
+  if (lessonNumber <= 2) return 1;
+  if (lessonNumber <= 4) return 2;
+  if (lessonNumber <= 5) return 3;
+  return 4 + Math.floor((lessonNumber - 6) / 3);
+}
+
+function inferLessonContent(lessonId) {
+  const match = /^a1-(\d{3})$/i.exec(String(lessonId || ''));
+  if (!match) {
+    return {
+      lesson: {
+        lessonId,
+        lessonTitle: 'Sample Lesson',
+        lessonType: 'practice',
+        estMinutes: 10,
+        unitId: 'unit-1',
+        unitTitle: 'Starter Unit',
+        cefrLevel: 'A1',
+        trackCode: 'daily_core',
+        trackName: 'Core Track',
+        languageCode: 'en',
+        qaStatus: 'approved',
+        qaNotes: null,
+      },
+      body: {
+        intro: 'Welcome to your lesson.',
+        objective: 'Build one small English habit with short guided practice.',
+        tasks: ['Listen', 'Repeat', 'Quiz'],
+        supportTips: ['Say the words aloud.', 'Match meaning before answering.', 'Review mistakes once.'],
+        reviewPrompt: 'Can you say one sentence from this lesson on your own?',
+        source: 'server-fallback',
+      },
+    };
+  }
+
+  const lessonNumber = Number(match[1]);
+  const unitNumber = getUnitNumberForLesson(lessonNumber);
+  const generatedIndex = lessonNumber >= 6 ? Math.floor((lessonNumber - 6) / 3) : -1;
+  const generatedTheme = GENERATED_LESSON_THEMES[generatedIndex] || 'English Basics';
+
+  const curatedLessons = {
+    1: {
+      title: 'Hello and Goodbye',
+      type: 'vocabulary',
+      objective: 'Use greetings and farewells in short daily conversations.',
+      intro: 'This lesson helps learners greet others with confidence.',
+      tasks: ['Listen to greetings', 'Repeat key words', 'Answer two quick questions'],
+    },
+    2: {
+      title: 'Introducing Yourself',
+      type: 'speaking',
+      objective: 'Introduce yourself and ask for names using short sentences.',
+      intro: 'This lesson focuses on saying your name and understanding simple introductions.',
+      tasks: ['Practice "I am..."', 'Ask for a name', 'Complete the mini quiz'],
+    },
+    3: {
+      title: 'Numbers 1-20',
+      type: 'vocabulary',
+      objective: 'Recognize, say, and use numbers from 1 to 20.',
+      intro: 'This lesson builds confidence with counting and simple number use.',
+      tasks: ['Count aloud', 'Match numbers to words', 'Fill in the blank'],
+    },
+    4: {
+      title: 'Colors',
+      type: 'vocabulary',
+      objective: 'Name basic colors and describe everyday objects.',
+      intro: 'This lesson connects color words to common objects around the learner.',
+      tasks: ['Review the color words', 'Describe objects', 'Solve the quick quiz'],
+    },
+    5: {
+      title: 'Family Members',
+      type: 'vocabulary',
+      objective: 'Talk about close family using simple English.',
+      intro: 'This lesson introduces family words that are useful in daily speaking.',
+      tasks: ['Review family words', 'Say one sentence about your family', 'Finish the quiz'],
+    },
+  };
+
+  const curated = curatedLessons[lessonNumber];
+  const cycle = lessonNumber >= 6 ? (lessonNumber - 6) % 3 : 0;
+  const inferredType = curated?.type || (cycle === 0 ? 'vocabulary' : cycle === 1 ? 'grammar' : 'reading');
+  const inferredTitle = curated?.title
+    || (cycle === 0
+      ? `${generatedTheme}: Key Words`
+      : cycle === 1
+        ? `${generatedTheme}: Sentence Builder`
+        : `${generatedTheme}: Read and Speak`);
+  const inferredObjective = curated?.objective
+    || (cycle === 0
+      ? `Learn the key words for ${generatedTheme.toLowerCase()}.`
+      : cycle === 1
+        ? `Build short sentences about ${generatedTheme.toLowerCase()}.`
+        : `Read and speak about ${generatedTheme.toLowerCase()} in simple English.`);
+  const inferredIntro = curated?.intro
+    || `This lesson is part of Unit ${unitNumber} and focuses on ${generatedTheme.toLowerCase()}.`;
+  const inferredTasks = curated?.tasks
+    || (cycle === 0
+      ? ['Learn the vocabulary', 'Say each word aloud', 'Complete the quiz']
+      : cycle === 1
+        ? ['Review the sentence pattern', 'Choose the correct form', 'Practice one example']
+        : ['Read the short text', 'Answer two questions', 'Speak one short idea']);
+
+  return {
+    lesson: {
+      lessonId,
+      lessonTitle: inferredTitle,
+      lessonType: inferredType,
+      estMinutes: cycle === 2 ? 10 : cycle === 1 ? 9 : 8,
+      unitId: `unit-${unitNumber}`,
+      unitTitle: `Unit ${unitNumber}`,
+      cefrLevel: lessonNumber <= 8 ? 'A1.1' : lessonNumber <= 32 ? 'A1.2' : 'A1.3',
+      trackCode: 'daily_core',
+      trackName: 'Core Track',
+      languageCode: 'en',
+      qaStatus: 'approved',
+      qaNotes: lessonNumber > 40 ? 'Generated lesson with validated structure.' : null,
+    },
+    body: {
+      intro: inferredIntro,
+      objective: inferredObjective,
+      tasks: inferredTasks,
+      supportTips: [
+        'Read the prompt once before answering.',
+        'Say the answer aloud when possible.',
+        'Retry the lesson if your score is below the mastery target.',
+      ],
+      reviewPrompt: `After this lesson, say one sentence about ${generatedTheme.toLowerCase()}.`,
+      source: 'server-derived',
+    },
+  };
+}
+
 const PRACTICE_EXERCISES = [
   {
     id: 'practice-pronunciation-1',
@@ -864,27 +1016,7 @@ app.get('/api/v1/learning-path', authMiddleware, (req, res) => {
 
 app.get('/api/v1/lessons/:lessonId/content', authMiddleware, (req, res) => {
   const lessonId = String(req.params.lessonId);
-  res.json({
-    lesson: {
-      lessonId,
-      lessonTitle: 'Sample Lesson',
-      lessonType: 'practice',
-      estMinutes: 10,
-      unitId: 'unit-1',
-      unitTitle: 'Starter Unit',
-      cefrLevel: 'A1',
-      trackCode: 'daily_core',
-      trackName: 'Core Track',
-      languageCode: 'en',
-      qaStatus: 'approved',
-      qaNotes: null,
-    },
-    body: {
-      intro: 'Welcome to your lesson.',
-      objective: 'Use simple present tense in daily context.',
-      tasks: ['listen', 'repeat', 'quiz'],
-    },
-  });
+  res.json(inferLessonContent(lessonId));
 });
 
 // ---------------------------------------------------------------------------
