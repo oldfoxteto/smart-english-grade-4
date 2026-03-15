@@ -555,6 +555,15 @@ export async function login(payload: AuthPayload): Promise<AuthResponse> {
   }, { auth: false, retryOn401: false });
 }
 
+export async function logout() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return;
+  await apiRequest<void>('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  }, { auth: false, retryOn401: false });
+}
+
 // ---------------- Progress & SRS ----------------
 export async function fetchProgress(): Promise<RemoteProgress> {
   return apiRequest<RemoteProgress>('/progress');

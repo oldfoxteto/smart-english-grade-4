@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -22,11 +23,23 @@ const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http:
   .map(s => s.trim())
   .filter(Boolean);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
 const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '1h';
+const REFRESH_TOKEN_TTL = process.env.REFRESH_TOKEN_TTL || '7d';
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '5mb';
+
+if (JWT_SECRET === 'dev-secret' || JWT_SECRET.length < 32) {
+  const message = 'JWT_SECRET must be at least 32 characters and must not use the default development secret.';
+  if (IS_PRODUCTION) {
+    throw new Error(message);
+  }
+  console.warn(`SECURITY WARNING: ${message}`);
+}
 
 // ---------------------------------------------------------------------------
 // DB setup (SQLite)
@@ -134,14 +147,47 @@ db.serialize(() => {
     completedAt TEXT,
     PRIMARY KEY (userId, questId)
   )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS refresh_tokens (
+    tokenId TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    expiresAt TEXT NOT NULL,
+    revokedAt TEXT,
+    replacedByTokenId TEXT,
+    createdAt TEXT
+  )`);
 });
 
 // Helpers
 const nowIso = () => new Date().toISOString();
-const generateId = () => Math.random().toString(36).slice(2, 10);
+const generateId = () => crypto.randomUUID();
 const parseJSON = (value, fallback) => {
   try { return JSON.parse(value); } catch { return fallback; }
 };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
+const allowedOriginSet = new Set(CLIENT_URLS);
+const corsOriginMatcher = (origin, callback) => {
+  if (!origin || allowedOriginSet.has(origin)) {
+    callback(null, true);
+    return;
+  }
+  callback(new Error('CORS_NOT_ALLOWED'));
+};
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+const sanitizeDisplayName = (value) => String(value || 'Learner').trim().replace(/\s+/g, ' ').slice(0, 60) || 'Learner';
+const isValidEmail = (value) => EMAIL_RE.test(normalizeEmail(value));
+const isValidPassword = (value) => PASSWORD_RE.test(String(value || ''));
+const parseDurationMs = (value, fallbackMs) => {
+  if (typeof value !== 'string') return fallbackMs;
+  const match = value.trim().match(/^(\d+)([smhd])$/i);
+  if (!match) return fallbackMs;
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multipliers = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return amount * multipliers[unit];
+};
+const refreshTokenTtlMs = parseDurationMs(REFRESH_TOKEN_TTL, 7 * 24 * 60 * 60 * 1000);
 const classifyAiError = (error) => {
   const status = Number(error?.status || 0);
   const code = String(error?.code || error?.type || '').toLowerCase();
@@ -657,10 +703,61 @@ function scoreToCefr(scorePercent) {
   return 'A1';
 }
 
-function signTokens(userId) {
-  const token = jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: '1h' });
-  const refreshToken = jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: '7d' });
+async function cleanupExpiredRefreshTokens() {
+  await dbRun(`DELETE FROM refresh_tokens WHERE expiresAt <= ? OR revokedAt IS NOT NULL`, [nowIso()]);
+}
+
+async function issueTokens(userId, rotateFromTokenId = null) {
+  const token = jwt.sign({ sub: userId, type: 'access' }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
+  const refreshTokenId = crypto.randomUUID();
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + refreshTokenTtlMs).toISOString();
+  const refreshToken = jwt.sign({ sub: userId, type: 'refresh', jti: refreshTokenId }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL });
+
+  await dbRun(
+    `INSERT INTO refresh_tokens (tokenId, userId, expiresAt, revokedAt, replacedByTokenId, createdAt)
+     VALUES (?, ?, ?, NULL, NULL, ?)`,
+    [refreshTokenId, userId, expiresAt, createdAt]
+  );
+
+  if (rotateFromTokenId) {
+    await dbRun(
+      `UPDATE refresh_tokens
+       SET revokedAt = COALESCE(revokedAt, ?), replacedByTokenId = ?
+       WHERE tokenId = ?`,
+      [createdAt, refreshTokenId, rotateFromTokenId]
+    );
+  }
+
   return { token, refreshToken };
+}
+
+async function verifyRefreshTokenRecord(refreshToken) {
+  const payload = jwt.verify(refreshToken, JWT_SECRET);
+  if (payload.type !== 'refresh' || !payload.jti || !payload.sub) {
+    throw new Error('INVALID_REFRESH');
+  }
+
+  const row = await dbGet(
+    `SELECT * FROM refresh_tokens WHERE tokenId = ? AND userId = ?`,
+    [payload.jti, payload.sub]
+  );
+
+  if (!row || row.revokedAt || new Date(row.expiresAt).getTime() <= Date.now()) {
+    throw new Error('INVALID_REFRESH');
+  }
+
+  return payload;
+}
+
+async function revokeRefreshToken(refreshToken) {
+  const payload = jwt.verify(refreshToken, JWT_SECRET);
+  if (payload.type !== 'refresh' || !payload.jti) return false;
+  await dbRun(
+    `UPDATE refresh_tokens SET revokedAt = COALESCE(revokedAt, ?) WHERE tokenId = ?`,
+    [nowIso(), payload.jti]
+  );
+  return true;
 }
 
 function authMiddleware(req, res, next) {
@@ -669,6 +766,9 @@ function authMiddleware(req, res, next) {
   if (!token) return res.status(401).json({ error: 'UNAUTHENTICATED' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.type === 'refresh') {
+      return res.status(401).json({ error: 'INVALID_TOKEN_TYPE' });
+    }
     req.userId = payload.sub;
     next();
   } catch {
@@ -682,14 +782,16 @@ function authMiddleware(req, res, next) {
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
-  cors: { origin: CLIENT_URLS, methods: ['GET', 'POST'] }
+  cors: { origin: corsOriginMatcher, methods: ['GET', 'POST'] }
 });
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(compression());
-app.use(cors({ origin: CLIENT_URLS, credentials: true }));
+app.use(cors({ origin: corsOriginMatcher, credentials: true }));
 app.use(morgan('combined'));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
 // Request-level metrics for ops dashboard
 app.use((req, res, next) => {
@@ -712,60 +814,93 @@ app.use((req, res, next) => {
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/v1/', limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_AUTH_ATTEMPTS' },
+});
 
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
-app.post('/api/v1/auth/register', (req, res) => {
+app.post('/api/v1/auth/register', authLimiter, async (req, res) => {
   const { email, password, displayName } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+  const normalizedEmail = normalizeEmail(email);
+  const safeDisplayName = sanitizeDisplayName(displayName);
+
+  if (!normalizedEmail || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+  if (!isValidEmail(normalizedEmail)) return res.status(400).json({ error: 'INVALID_EMAIL' });
+  if (!isValidPassword(password)) {
+    return res.status(400).json({ error: 'WEAK_PASSWORD', requirements: 'Use 8-128 chars with uppercase, lowercase, and a number.' });
+  }
 
   const id = generateId();
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = bcrypt.hashSync(password, 12);
   const createdAt = nowIso();
 
-  db.run(
-    `INSERT INTO users (id, email, passwordHash, displayName, createdAt) VALUES (?,?,?,?,?)`,
-    [id, email.toLowerCase(), hash, displayName || 'Learner', createdAt],
-    function (err) {
-      if (err) {
-        if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'EMAIL_EXISTS' });
-        return res.status(500).json({ error: 'DB_ERROR' });
-      }
-      db.run(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
-      const tokens = signTokens(id);
-      res.json({ user: { id, email, displayName: displayName || 'Learner', status: 'active', roles: ['user'] }, ...tokens });
-    }
-  );
+  try {
+    await cleanupExpiredRefreshTokens();
+    await dbRun(
+      `INSERT INTO users (id, email, passwordHash, displayName, createdAt) VALUES (?,?,?,?,?)`,
+      [id, normalizedEmail, hash, safeDisplayName, createdAt]
+    );
+    await dbRun(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
+    const tokens = await issueTokens(id);
+    res.status(201).json({ user: { id, email: normalizedEmail, displayName: safeDisplayName, status: 'active', roles: ['user'] }, ...tokens });
+  } catch (err) {
+    if (String(err?.message || '').includes('UNIQUE')) return res.status(409).json({ error: 'EMAIL_EXISTS' });
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
 });
 
-app.post('/api/v1/auth/login', (req, res) => {
+app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail || !password) return res.status(400).json({ error: 'EMAIL_PASSWORD_REQUIRED' });
+  if (!isValidEmail(normalizedEmail)) return res.status(400).json({ error: 'INVALID_EMAIL' });
 
-  db.get(`SELECT * FROM users WHERE email = ?`, [email.toLowerCase()], (err, row) => {
-    if (err) return res.status(500).json({ error: 'DB_ERROR' });
+  try {
+    await cleanupExpiredRefreshTokens();
+    const row = await dbGet(`SELECT * FROM users WHERE email = ?`, [normalizedEmail]);
     if (!row || !bcrypt.compareSync(password, row.passwordHash)) {
       return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
     }
-    const tokens = signTokens(row.id);
+    const tokens = await issueTokens(row.id);
     res.json({ user: { id: row.id, email: row.email, displayName: row.displayName, status: 'active', roles: ['user'] }, ...tokens });
-  });
+  } catch {
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
 });
 
-app.post('/api/v1/auth/refresh', (req, res) => {
-  const { refreshToken } = req.body || {};
+app.post('/api/v1/auth/refresh', authLimiter, async (req, res) => {
+  const refreshToken = String(req.body?.refreshToken || '').trim();
   if (!refreshToken) return res.status(400).json({ error: 'REFRESH_REQUIRED' });
   try {
-    const payload = jwt.verify(refreshToken, JWT_SECRET);
-    if (payload.type !== 'refresh') throw new Error('bad token');
-    const tokens = signTokens(payload.sub);
+    await cleanupExpiredRefreshTokens();
+    const payload = await verifyRefreshTokenRecord(refreshToken);
+    const tokens = await issueTokens(payload.sub, payload.jti);
     return res.json(tokens);
   } catch {
     return res.status(401).json({ error: 'INVALID_REFRESH' });
   }
+});
+
+app.post('/api/v1/auth/logout', authLimiter, async (req, res) => {
+  const refreshToken = String(req.body?.refreshToken || '').trim();
+  if (!refreshToken) return res.status(204).end();
+  try {
+    await revokeRefreshToken(refreshToken);
+  } catch {
+    // Best effort: client logout should still succeed even if token is already invalid.
+  }
+  return res.status(204).end();
 });
 
 // ---------------------------------------------------------------------------
@@ -1802,6 +1937,7 @@ io.use((socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) return next(new Error('UNAUTHORIZED'));
     const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.type === 'refresh') return next(new Error('INVALID_TOKEN_TYPE'));
     socket.userId = payload.sub;
     return next();
   } catch {
@@ -1972,9 +2108,11 @@ app.use('*', (_req, res) => {
   res.status(404).json({ error: 'NOT_FOUND' });
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 API ready on http://localhost:${PORT}/api/v1`);
-  console.log(`🌐 CORS clients: ${CLIENT_URLS.join(', ')}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`🚀 API ready on http://localhost:${PORT}/api/v1`);
+    console.log(`🌐 CORS clients: ${CLIENT_URLS.join(', ')}`);
+  });
+}
 
 module.exports = { app, server, io, db };

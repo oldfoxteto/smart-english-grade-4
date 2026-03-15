@@ -15,16 +15,23 @@ import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartm
 import { useNavigate } from "react-router-dom";
 import { useProgress } from "../../core/ProgressContext";
 import { clearTokens } from "../../core/auth";
+import { logout } from "../../core/api";
 import { playfulPalette } from "../../theme/playfulPalette";
 
 const Header = () => {
   const navigate = useNavigate();
   const { progress, resetProgress } = useProgress();
 
-  const handleLogout = () => {
-    clearTokens();
-    resetProgress();
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Best effort: local logout should still complete.
+    } finally {
+      clearTokens();
+      resetProgress();
+      navigate("/login");
+    }
   };
 
   return (
@@ -163,7 +170,7 @@ const Header = () => {
 
             <Tooltip title="Log out">
               <IconButton
-                onClick={handleLogout}
+                onClick={() => { void handleLogout(); }}
                 sx={{
                   width: 38,
                   height: 38,
