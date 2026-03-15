@@ -1814,14 +1814,22 @@ io.on('connection', (socket) => {
   socket.on('voice:join', (roomId) => {
     const safeRoom = roomId || `room-${socket.userId || 'anon'}`;
     socket.join(safeRoom);
-    socket.emit('voice:status', voiceRuntimeStatus());
+    const usage = voiceUsage.get(socket.userId) || { start: Date.now(), count: 0 };
+    socket.emit('voice:status', {
+      ...voiceRuntimeStatus(),
+      joined: true,
+      roomId: safeRoom,
+      usageCount: usage.count,
+      remainingFrames: Math.max(0, MAX_FRAMES_PER_MIN - usage.count),
+      busy: false,
+    });
     socket.to(safeRoom).emit('voice:peer-joined', { peerId: socket.id, userId: socket.userId });
   });
 
   socket.on('voice:leave', (roomId) => {
     const safeRoom = roomId || `room-${socket.userId || 'anon'}`;
     socket.leave(safeRoom);
-    socket.emit('voice:status', { ...voiceRuntimeStatus(), joined: false });
+    socket.emit('voice:status', { ...voiceRuntimeStatus(), joined: false, roomId: safeRoom, busy: false });
   });
 
   socket.on('voice:ping', (payload) => {
@@ -1868,6 +1876,14 @@ io.on('connection', (socket) => {
     // STT/TTS integration (best-effort, throttled per socket)
     if (!openai) {
       const transcript = 'I heard your voice... (mock STT - set OPENAI_API_KEY for real transcription)';
+      socket.emit('voice:status', {
+        ...voiceRuntimeStatus(),
+        joined: true,
+        roomId: safeRoom,
+        usageCount: usage.count,
+        remainingFrames: Math.max(0, MAX_FRAMES_PER_MIN - usage.count),
+        busy: false,
+      });
       io.to(safeRoom).emit('voice:transcript', {
         peerId: socket.id,
         text: transcript,
@@ -1878,7 +1894,7 @@ io.on('connection', (socket) => {
 
     // Avoid overlap per socket
     if (socket.sttInFlight) {
-      socket.emit('voice:status', { ...voiceRuntimeStatus(), busy: true });
+      socket.emit('voice:status', { ...voiceRuntimeStatus(), joined: true, roomId: safeRoom, busy: true });
       return;
     }
     socket.sttInFlight = true;
@@ -1925,12 +1941,22 @@ io.on('connection', (socket) => {
       });
     }).finally(() => {
       socket.sttInFlight = false;
-      socket.emit('voice:status', { ...voiceRuntimeStatus(), busy: false });
+      socket.emit('voice:status', {
+        ...voiceRuntimeStatus(),
+        joined: true,
+        roomId: safeRoom,
+        usageCount: usage.count,
+        remainingFrames: Math.max(0, MAX_FRAMES_PER_MIN - usage.count),
+        busy: false,
+      });
     });
   });
 
   socket.on('disconnect', () => {
     console.log('🔌 Socket disconnected', socket.id);
+    if (socket.userId) {
+      voiceUsage.delete(socket.userId);
+    }
   });
 });
 

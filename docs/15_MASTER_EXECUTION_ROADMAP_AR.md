@@ -199,10 +199,11 @@
 - نجحت أوامر `npm run db:migrate` و `npm run db:seed`
 - نجحت اختبارات `backend npm test` و `backend npm run test:e2e` و `backend npm run test:security` بدون `skipped`
 
-### 6. realtime voice في الباكند الحالي ما زال placeholder جزئيًا
+### 6. realtime voice في الباكند الحالي تم تحسينه ولم يعد placeholder بسيطًا
 الحالة الحالية:
-- [server.js](D:/sara/smart-english-grade-4/server/server.js) يحتوي على بث socket وصيغة أولية لـ STT/TTS
-- المسار الحالي ليس تجربة production-grade بعد
+- [server.js](D:/sara/smart-english-grade-4/server/server.js) يحتوي على بث socket وصيغة تشغيل فعلية لـ STT/TTS مع rate limiting ورسائل status/error أوضح
+- الواجهة في [AITutorPage.tsx](D:/sara/smart-english-grade-4/src/pages/AITutorPage.tsx) أصبحت تدير lifecycle الجلسة والتنظيف وإعادة الاتصال بشكل أفضل
+- المسار الحالي أقرب كثيرًا للجاهزية، لكنه ليس تجربة production-grade نهائية بعد
 
 المشكلة:
 - الأداء والاستقرار وجودة التدفق الصوتي غير مضمونة
@@ -356,4 +357,4 @@
 - [ ] بناء جدول ربط لكل صفحة مع مصدر بياناتها الحالي والمستهدف
 - [ ] تنظيف النسخ القديمة غير المستخدمة
 - [x] تجهيز `backend/` محليًا بالكامل أو تجميده رسميًا
-- [ ] نقل الصوت من placeholder إلى خدمة مستقرة
+- [x] نقل الصوت من placeholder إلى مسار أكثر استقرارًا وجاهزية للإنتاج

@@ -8,6 +8,19 @@ import { getAccessToken } from '../core/auth';
 let socketPromise: Promise<Socket> | null = null;
 let socketInstance: Socket | null = null;
 
+export function getVoiceSocketBaseUrl() {
+  return API_BASE_URL.replace('/api/v1', '');
+}
+
+export function destroyVoiceSocket() {
+  if (socketInstance) {
+    socketInstance.removeAllListeners();
+    socketInstance.disconnect();
+  }
+  socketInstance = null;
+  socketPromise = null;
+}
+
 export function getVoiceSocket(): Promise<Socket> {
   const token = getAccessToken() || '';
 
@@ -21,7 +34,7 @@ export function getVoiceSocket(): Promise<Socket> {
 
   if (!socketPromise) {
     socketPromise = import('socket.io-client').then(({ io }) => {
-      const url = API_BASE_URL.replace('/api/v1', '');
+      const url = getVoiceSocketBaseUrl();
       const socket = io(url, {
         transports: ['websocket', 'polling'],
         path: '/socket.io',
@@ -41,9 +54,9 @@ export function getVoiceSocket(): Promise<Socket> {
       });
 
       socket.on('disconnect', (reason) => {
-        if (reason === 'io server disconnect' || reason === 'transport close') {
-          socketInstance = null;
-          socketPromise = null;
+        if (reason === 'io server disconnect') {
+          socket.auth = { token: getAccessToken() || '' };
+          socket.connect();
         }
       });
 

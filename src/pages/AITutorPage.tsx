@@ -34,7 +34,12 @@ import {
   type AiTutorResponse,
 } from '../core/api';
 import { getCurrentUser } from '../core/auth';
-import { getVoiceSocket } from '../services/voiceSocket';
+import { destroyVoiceSocket, getVoiceSocket } from '../services/voiceSocket';
+import {
+  formatVoiceConnectionLabel,
+  type VoiceErrorPayload,
+  type VoiceStatusPayload,
+} from '../services/voiceProtocol';
 import { VoiceCooldownBanner } from '../components/VoiceCooldownBanner';
 import { playfulPalette } from '../theme/playfulPalette';
 
@@ -146,13 +151,16 @@ const AITutorPage = () => {
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [voiceLimitedTill, setVoiceLimitedTill] = useState<number | null>(null);
   const [cooldownLeft, setCooldownLeft] = useState<number | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatusPayload | null>(null);
 
   const isCallModeRef = useRef(false);
   const botIsSpeakingRef = useRef(false);
   const loadingRef = useRef(false);
+  const streamingRef = useRef(false);
   const recognitionRef = useRef<any>(null);
 
   const voiceSocketRef = useRef<any>(null);
+  const voiceListenersBoundRef = useRef(false);
   const reconnectStartedAtRef = useRef<number | null>(null);
   const voiceConnectErrorCountRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -200,7 +208,8 @@ const AITutorPage = () => {
     isCallModeRef.current = isCallMode;
     botIsSpeakingRef.current = botIsSpeaking;
     loadingRef.current = loading;
-  }, [isCallMode, botIsSpeaking, loading]);
+    streamingRef.current = streaming;
+  }, [isCallMode, botIsSpeaking, loading, streaming]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -313,96 +322,104 @@ const AITutorPage = () => {
     setStreaming(false);
   }, []);
 
-  const ensureVoiceSocket = useCallback(() => {
-    if (voiceSocketRef.current) return;
+  const leaveVoiceRoom = useCallback(() => {
+    voiceSocketRef.current?.emit?.('voice:leave', roomIdRef.current);
+  }, []);
 
-    getVoiceSocket()
-      .then((socket) => {
-        voiceSocketRef.current = socket;
+  const ensureVoiceSocket = useCallback(async () => {
+    const socket = voiceSocketRef.current || await getVoiceSocket();
+    voiceSocketRef.current = socket;
+    if (voiceListenersBoundRef.current) return socket;
 
-        socket.on('connect', () => {
-          setConnected(true);
-          setErrorText(null);
-          const started = reconnectStartedAtRef.current;
-          if (started) {
-            const downtimeMs = Date.now() - started;
-            reconnectStartedAtRef.current = null;
-            void trackAnalyticsEvent({
-              eventName: 'voice_socket_reconnected',
-              metadata: { downtimeMs },
-            }).catch(() => undefined);
-          }
-        });
-        socket.on('disconnect', (reason: string) => {
-          setConnected(false);
-          if (reason !== 'io client disconnect') {
-            reconnectStartedAtRef.current = Date.now();
-            void trackAnalyticsEvent({
-              eventName: 'voice_socket_disconnected',
-              metadata: { reason },
-            }).catch(() => undefined);
-          }
-        });
-        socket.on('connect_error', (error: any) => {
-          setConnected(false);
-          setErrorText('Voice channel is unavailable right now.');
-          voiceConnectErrorCountRef.current += 1;
-          void trackAnalyticsEvent({
-            eventName: 'voice_socket_connect_error',
-            metadata: {
-              message: String(error?.message || 'unknown'),
-              count: voiceConnectErrorCountRef.current,
-            },
-          }).catch(() => undefined);
-        });
-        socket.on('voice:pong', (payload: any) => {
-          if (!payload?.ts) return;
-          setLatencyMs(Math.max(0, Date.now() - Number(payload.ts)));
-        });
-        socket.on('voice:status', (payload: any) => {
-          const mode = String(payload?.mode || '');
-          if (mode === 'mock-transcript') {
-            setAiMode('fallback');
-          }
-          if (payload?.busy === false && !streaming) {
-            setErrorText(null);
-          }
-        });
-        socket.on('voice:error', (payload: any) => {
-          const message = String(payload?.message || 'Voice channel error.');
-          setErrorText(message);
-          if (String(payload?.code || '').includes('VOICE_')) {
-            stopStreaming();
-          }
-        });
-        socket.on('voice:limit', (payload: any) => {
-          const resetInMs = Number(payload?.resetInMs || 60_000);
-          setVoiceLimitedTill(Date.now() + resetInMs);
-          stopStreaming();
-          void trackAnalyticsEvent({
-            eventName: 'ai_tutor_cooldown_hit',
-            metadata: { scenario: activeScenario, resetInMs },
-          }).catch(() => undefined);
-        });
-        socket.on('voice:transcript', (payload: any) => {
-          const text = String(payload?.text || '').trim();
-          if (!text) return;
-          setMessages((prev) => prev.concat({ id: `${Date.now()}-stt`, role: 'bot', text, time: formatTime() }));
-        });
-        socket.on('voice:tts', (payload: any) => {
-          if (payload?.text) speakVoice(String(payload.text), activeLang.ttsLang);
-          if (payload?.audioBase64) {
-            const audio = new Audio(`data:audio/mp3;base64,${payload.audioBase64}`);
-            void audio.play().catch(() => undefined);
-          }
-        });
-      })
-      .catch(() => setConnected(false));
-  }, [activeLang.ttsLang, activeScenario, speakVoice, stopStreaming, streaming]);
+    voiceListenersBoundRef.current = true;
+
+    socket.on('connect', () => {
+      setConnected(true);
+      setErrorText(null);
+      const started = reconnectStartedAtRef.current;
+      if (started) {
+        const downtimeMs = Date.now() - started;
+        reconnectStartedAtRef.current = null;
+        void trackAnalyticsEvent({
+          eventName: 'voice_socket_reconnected',
+          metadata: { downtimeMs },
+        }).catch(() => undefined);
+      }
+    });
+    socket.on('disconnect', (reason: string) => {
+      setConnected(false);
+      if (reason !== 'io client disconnect') {
+        reconnectStartedAtRef.current = reconnectStartedAtRef.current || Date.now();
+        void trackAnalyticsEvent({
+          eventName: 'voice_socket_disconnected',
+          metadata: { reason },
+        }).catch(() => undefined);
+      }
+    });
+    socket.on('connect_error', (error: any) => {
+      setConnected(false);
+      setErrorText('Voice channel is unavailable right now.');
+      voiceConnectErrorCountRef.current += 1;
+      void trackAnalyticsEvent({
+        eventName: 'voice_socket_connect_error',
+        metadata: {
+          message: String(error?.message || 'unknown'),
+          count: voiceConnectErrorCountRef.current,
+        },
+      }).catch(() => undefined);
+    });
+    socket.on('voice:pong', (payload: any) => {
+      if (!payload?.ts) return;
+      setLatencyMs(Math.max(0, Date.now() - Number(payload.ts)));
+    });
+    socket.on('voice:status', (payload: any) => {
+      const nextStatus = payload as VoiceStatusPayload;
+      setVoiceStatus(nextStatus);
+      const mode = String(nextStatus?.mode || '');
+      if (mode === 'mock-transcript') {
+        setAiMode('fallback');
+      }
+      if (payload?.busy === false && !streamingRef.current) {
+        setErrorText(null);
+      }
+    });
+    socket.on('voice:error', (payload: any) => {
+      const voiceError = payload as VoiceErrorPayload;
+      const message = String(voiceError?.message || 'Voice channel error.');
+      setErrorText(message);
+      if (String(voiceError?.code || '').includes('VOICE_')) {
+        stopStreaming();
+      }
+    });
+    socket.on('voice:limit', (payload: any) => {
+      const resetInMs = Number(payload?.resetInMs || 60_000);
+      setVoiceLimitedTill(Date.now() + resetInMs);
+      stopStreaming();
+      void trackAnalyticsEvent({
+        eventName: 'ai_tutor_cooldown_hit',
+        metadata: { scenario: activeScenario, resetInMs },
+      }).catch(() => undefined);
+    });
+    socket.on('voice:transcript', (payload: any) => {
+      const text = String(payload?.text || '').trim();
+      if (!text) return;
+      setMessages((prev) => prev.concat({ id: `${Date.now()}-stt`, role: 'bot', text, time: formatTime() }));
+    });
+    socket.on('voice:tts', (payload: any) => {
+      if (payload?.text) speakVoice(String(payload.text), activeLang.ttsLang);
+      if (payload?.audioBase64) {
+        const audio = new Audio(`data:audio/mp3;base64,${payload.audioBase64}`);
+        void audio.play().catch(() => undefined);
+      }
+    });
+    setConnected(socket.connected);
+
+    return socket;
+  }, [activeLang.ttsLang, activeScenario, speakVoice, stopStreaming]);
 
   const startStreaming = useCallback(async () => {
     if (streaming) return;
-    ensureVoiceSocket();
+    const socket = await ensureVoiceSocket();
 
     if (!navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       throw new Error('Voice capture is not supported on this device/browser.');
@@ -440,6 +457,7 @@ const AITutorPage = () => {
       };
 
       recorder.start(250);
+      socket.emit('voice:join', roomIdRef.current);
       setStreaming(true);
     } catch (error) {
       if (stream) {
@@ -474,6 +492,21 @@ const AITutorPage = () => {
     const id = window.setInterval(update, 500);
     return () => window.clearInterval(id);
   }, [voiceLimitedTill]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // noop
+      }
+      leaveVoiceRoom();
+      stopStreaming();
+      voiceListenersBoundRef.current = false;
+      voiceSocketRef.current = null;
+      destroyVoiceSocket();
+    };
+  }, [leaveVoiceRoom, stopStreaming]);
 
   const sendMessage = useCallback(
     async (text = input, imageBase64?: string) => {
@@ -581,43 +614,42 @@ const AITutorPage = () => {
   };
 
   const toggleCallMode = () => {
-    ensureVoiceSocket();
-
-    setIsCallMode((prev) => {
-      const next = !prev;
-      if (next) {
-        if (voiceLimitedTill && voiceLimitedTill > Date.now()) {
-          setMessages((old) => old.concat({ id: `${Date.now()}-limit`, role: 'bot', text: 'Voice cooldown active. Please wait.', time: formatTime() }));
-          return prev;
-        }
-        setTimeout(() => {
-          try {
-            recognitionRef.current?.start();
-          } catch {
-            // noop
-          }
-        }, 300);
-        voiceSocketRef.current?.emit?.('voice:join', roomIdRef.current);
-        void startStreaming().catch((error) => {
-          const reason = error instanceof Error ? error.message : 'Microphone stream failed';
-          setErrorText('Microphone stream failed');
-          void trackAnalyticsEvent({
-            eventName: 'voice_stream_start_failed',
-            metadata: { reason },
-          }).catch(() => undefined);
-        });
-      } else {
-        window.speechSynthesis.cancel();
-        setBotIsSpeaking(false);
+    if (!isCallMode) {
+      if (voiceLimitedTill && voiceLimitedTill > Date.now()) {
+        setMessages((old) => old.concat({ id: `${Date.now()}-limit`, role: 'bot', text: 'Voice cooldown active. Please wait.', time: formatTime() }));
+        return;
+      }
+      setIsCallMode(true);
+      setTimeout(() => {
         try {
-          recognitionRef.current?.stop();
+          recognitionRef.current?.start();
         } catch {
           // noop
         }
-        stopStreaming();
-      }
-      return next;
-    });
+      }, 300);
+      void startStreaming().catch((error) => {
+        const reason = error instanceof Error ? error.message : 'Microphone stream failed';
+        setErrorText('Microphone stream failed');
+        setIsCallMode(false);
+        leaveVoiceRoom();
+        void trackAnalyticsEvent({
+          eventName: 'voice_stream_start_failed',
+          metadata: { reason },
+        }).catch(() => undefined);
+      });
+      return;
+    }
+
+    setIsCallMode(false);
+    window.speechSynthesis.cancel();
+    setBotIsSpeaking(false);
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // noop
+    }
+    leaveVoiceRoom();
+    stopStreaming();
   };
 
   const aiFallbackMode = aiMode === 'fallback';
@@ -659,7 +691,12 @@ const AITutorPage = () => {
     void sendMessage(`What is this? Tell me in English and ${activeLang.name}.`, imageSrc);
   };
 
-  const connectionStatus = connected ? (streaming ? `Live${latencyMs !== null ? ` ${latencyMs}ms` : ''}` : 'Ready') : 'Offline';
+  const connectionStatus = formatVoiceConnectionLabel({
+    connected,
+    streaming,
+    latencyMs,
+    voiceStatus,
+  });
   const cooldownActive = voiceLimitedTill !== null && voiceLimitedTill > Date.now();
 
   if (isCallMode) {
