@@ -255,6 +255,13 @@ const GENERATED_LESSON_THEMES = [
   'Shopping and Money',
 ];
 
+function resolveTrackForGoal(goalType) {
+  if (goalType === 'travel') return { trackCode: 'travel_core', trackName: 'Travel Track' };
+  if (goalType === 'work') return { trackCode: 'work_core', trackName: 'Work Track' };
+  if (goalType === 'study') return { trackCode: 'study_core', trackName: 'Study Track' };
+  return { trackCode: 'daily_core', trackName: 'Core Track' };
+}
+
 function getUnitNumberForLesson(lessonNumber) {
   if (lessonNumber <= 0) return 1;
   if (lessonNumber <= 2) return 1;
@@ -387,6 +394,29 @@ function inferLessonContent(lessonId) {
       source: 'server-derived',
     },
   };
+}
+
+function buildLessonCatalog(goalType = 'daily') {
+  const track = resolveTrackForGoal(goalType);
+  return Array.from({ length: 50 }, (_, index) => {
+    const lessonId = `a1-${String(index + 1).padStart(3, '0')}`;
+    const payload = inferLessonContent(lessonId);
+    return {
+      lessonId,
+      lessonTitle: payload.lesson.lessonTitle,
+      lessonType: payload.lesson.lessonType,
+      estMinutes: payload.lesson.estMinutes,
+      unitId: payload.lesson.unitId,
+      unitTitle: payload.lesson.unitTitle,
+      unitNumber: getUnitNumberForLesson(index + 1),
+      cefrLevel: payload.lesson.cefrLevel,
+      trackCode: track.trackCode,
+      trackName: track.trackName,
+      languageCode: payload.lesson.languageCode,
+      qaStatus: payload.lesson.qaStatus,
+      objective: payload.body.objective,
+    };
+  });
 }
 
 const PRACTICE_EXERCISES = [
@@ -984,33 +1014,30 @@ app.get('/api/v1/learning-path', authMiddleware, (req, res) => {
   const languageCode = String(req.query.languageCode || 'en');
   const goalType = String(req.query.goalType || 'daily');
   const mockCefr = 'A1';
-  const track = goalType === 'travel' ? 'travel_core' : goalType === 'work' ? 'work_core' : 'daily_core';
+  const track = resolveTrackForGoal(goalType);
+  const catalog = buildLessonCatalog(goalType);
   res.json({
     userId: req.userId,
     languageCode,
     goalType,
     cefr: mockCefr,
-    recommendedTrackCodes: [track],
-    lessons: [
-      {
-        track_code: track,
-        track_name: 'Core Track',
-        unit_title: 'Starter Unit',
-        lesson_id: 'lesson-hello-1',
-        lesson_title: 'Greetings and Introductions',
-        lesson_type: 'dialogue',
-        est_minutes: 10,
-      },
-      {
-        track_code: track,
-        track_name: 'Core Track',
-        unit_title: 'Starter Unit',
-        lesson_id: 'lesson-daily-1',
-        lesson_title: 'Daily Routine Basics',
-        lesson_type: 'practice',
-        est_minutes: 12,
-      },
-    ],
+    recommendedTrackCodes: [track.trackCode],
+    lessons: catalog.map((lesson) => ({
+      track_code: lesson.trackCode,
+      track_name: lesson.trackName,
+      unit_title: lesson.unitTitle,
+      lesson_id: lesson.lessonId,
+      lesson_title: lesson.lessonTitle,
+      lesson_type: lesson.lessonType,
+      est_minutes: lesson.estMinutes,
+    })),
+  });
+});
+
+app.get('/api/v1/lessons/catalog', authMiddleware, (req, res) => {
+  const goalType = String(req.query.goalType || 'daily');
+  res.json({
+    lessons: buildLessonCatalog(goalType),
   });
 });
 

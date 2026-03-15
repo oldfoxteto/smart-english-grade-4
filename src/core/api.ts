@@ -128,6 +128,22 @@ export interface LessonPathStatus {
   masteryScore: number;
 }
 
+export interface LessonCatalogEntry {
+  lessonId: string;
+  lessonTitle: string;
+  lessonType: string;
+  estMinutes: number;
+  unitId: string;
+  unitTitle: string;
+  unitNumber: number;
+  cefrLevel: string;
+  trackCode: string;
+  trackName: string;
+  languageCode: string;
+  qaStatus: string;
+  objective: string;
+}
+
 export interface GeneratedContent {
   cached: boolean;
   content: {
@@ -703,6 +719,10 @@ export async function getLessonPathStatuses(lessonIds: string[]) {
     method: 'POST',
     body: JSON.stringify({ lessonIds }),
   });
+}
+
+export async function getLessonCatalog(goalType: 'daily' | 'travel' | 'work' | 'study' = 'daily') {
+  return apiRequest<{ lessons: LessonCatalogEntry[] }>(`/lessons/catalog?goalType=${goalType}`);
 }
 
 export async function updateLessonProgress(lessonId: string, masteryScore: number, completed: boolean) {

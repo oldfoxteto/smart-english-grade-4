@@ -23,7 +23,7 @@ import { motion } from "framer-motion";
 import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
 import AnimatedBackground from "../components/AnimatedBackground";
-import { getLessonPathStatuses, type LessonPathStatus } from "../core/api";
+import { getLessonCatalog, getLessonPathStatuses, type LessonCatalogEntry, type LessonPathStatus } from "../core/api";
 import { getAllA1Lessons, type A1Lesson } from "../core/a1Content";
 import {
   getMasteryState,
@@ -69,10 +69,26 @@ const getCategoryAccent = (lesson: A1Lesson) => {
 const LessonsPage = () => {
   const navigate = useNavigate();
   const [masteryRevision, setMasteryRevision] = useState(0);
+  const [remoteCatalogMap, setRemoteCatalogMap] = useState<Record<string, LessonCatalogEntry>>({});
   const [remoteStatusMap, setRemoteStatusMap] = useState<Record<string, LessonPathStatus>>({});
   const [remoteEnabled, setRemoteEnabled] = useState(false);
 
-  const allLessons = useMemo(() => getAllA1Lessons(), []);
+  const localLessons = useMemo(() => getAllA1Lessons(), []);
+  const allLessons = useMemo(
+    () =>
+      localLessons.map((lesson) => {
+        const remoteLesson = remoteCatalogMap[lesson.id];
+        if (!remoteLesson) return lesson;
+        return {
+          ...lesson,
+          title: remoteLesson.lessonTitle || lesson.title,
+          description: remoteLesson.objective || lesson.description,
+          duration: remoteLesson.estMinutes || lesson.duration,
+          unit: remoteLesson.unitNumber || lesson.unit,
+        };
+      }),
+    [localLessons, remoteCatalogMap]
+  );
   const masteryState = getMasteryState();
   const unlockedIds = useMemo(
     () => new Set(getUnlockedLessonIds(allLessons, masteryState)),
@@ -85,6 +101,26 @@ const LessonsPage = () => {
       setMasteryRevision((value) => value + 1);
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLessonCatalog()
+      .then((response) => {
+        if (cancelled) return;
+        const map: Record<string, LessonCatalogEntry> = {};
+        response.lessons.forEach((lesson) => {
+          map[lesson.lessonId] = lesson;
+        });
+        setRemoteCatalogMap(map);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRemoteCatalogMap({});
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
