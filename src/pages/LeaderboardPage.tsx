@@ -1,224 +1,242 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Box, Typography, Paper, Avatar, IconButton, Stack, Chip, Tabs, Tab } from '@mui/material';
-import { ArrowBack, Whatshot, WorkspacePremium, Security, Star } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
-import { useProgress } from '../core/ProgressContext';
-import { getGamificationStatus } from '../core/api';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useMemo } from "react";
+import { Box, Typography, Card, CardContent, Avatar, IconButton, Stack, Chip, Tabs, Tab } from "@mui/material";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
+import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
+import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import { useNavigate } from "react-router-dom";
+import CircularProgress from "@mui/material/CircularProgress";
+import Alert from "@mui/material/Alert";
+import { getLeaderboard, type LeaderboardEntry } from "../core/api";
+import { motion, AnimatePresence } from "framer-motion";
+import AnimatedBackground from "../components/AnimatedBackground";
+import { playfulPalette } from "../theme/playfulPalette";
 
-type LeagueType = 'Bronze' | 'Silver' | 'Gold';
+type LeagueType = "Bronze" | "Silver" | "Gold";
 
-interface LeaderboardUser {
-    id: string;
-    name: string;
-    xp: number;
-    streak: number;
-    isCurrentUser?: boolean;
-    rank?: number;
-}
+const MotionCard = motion(Card);
 
-// Generate deterministic mock users
-const generateMockUsers = (league: LeagueType, count: number): LeaderboardUser[] => {
-    const names = [
-        'Youssef Ahmed', 'Sara Mohamed', 'Omar Ali', 'Laila Hassan', 'Ziad Tariq',
-        'Nour Kareem', 'Habiba Said', 'Kareem Mostafa', 'Mariam Tarek', 'Ali Yasser'
-    ];
-    // Base XP depends on league
-    const base = league === 'Gold' ? 8000 : league === 'Silver' ? 4000 : 1500;
-    const spread = league === 'Gold' ? 7000 : league === 'Silver' ? 3000 : 2000;
+const glassCardSx = {
+  borderRadius: 5,
+  border: `1px solid ${playfulPalette.line}`,
+  background: playfulPalette.glass,
+  boxShadow: playfulPalette.glow,
+  backdropFilter: "blur(12px)",
+};
 
-    return Array.from({ length: count }).map((_, i) => ({
-        id: `${league}-${i}`,
-        name: names[i % names.length] + (i > names.length - 1 ? ` ${i}` : ''),
-        // Predictable pseudo-random
-        xp: Math.round(base + (Math.sin(i * 13) * spread)),
-        streak: Math.max(1, Math.round(15 + Math.sin(i * 7) * 14))
-    }));
+const getLeagueTheme = (league: LeagueType) => {
+  if (league === "Gold") {
+    return {
+      icon: <WorkspacePremiumRoundedIcon />,
+      hero: "linear-gradient(135deg, #FFE27A 0%, #FFBE78 46%, #FF8BA7 100%)",
+      soft: playfulPalette.softPeach,
+      accent: "#C7851F",
+    };
+  }
+  if (league === "Silver") {
+    return {
+      icon: <ShieldRoundedIcon />,
+      hero: "linear-gradient(135deg, #B39DFF 0%, #79D7FF 56%, #8DE6C2 100%)",
+      soft: playfulPalette.softLilac,
+      accent: "#5F65C7",
+    };
+  }
+  return {
+    icon: <StarRoundedIcon />,
+    hero: "linear-gradient(135deg, #FFBE78 0%, #FFE27A 52%, #8DE6C2 100%)",
+    soft: playfulPalette.softMint,
+    accent: "#2A8B6C",
+  };
 };
 
 const LeaderboardPage = () => {
-    const navigate = useNavigate();
-    const { progress } = useProgress();
-    const [currentLeague, setCurrentLeague] = useState<LeagueType>('Bronze');
-    const [stats, setStats] = useState({ xp: 0, streak: 1 });
+  const navigate = useNavigate();
+  const [currentLeague, setCurrentLeague] = useState<LeagueType>("Bronze");
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [currentUser, setCurrentUser] = useState<LeaderboardEntry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-    useEffect(() => {
-        getGamificationStatus().then((gamification: any) => {
-            const currentXp = gamification?.totalXp ?? (progress.stars * 10) + 2100;
-            const currentStreak = gamification?.currentStreakDays ?? 1;
-            setStats({ xp: currentXp, streak: currentStreak });
+  useEffect(() => {
+    setLoading(true);
+    getLeaderboard(currentLeague)
+      .then((response) => {
+        setEntries(response.entries);
+        setCurrentUser(response.currentUser);
+        setCurrentLeague(response.league);
+        setError("");
+      })
+      .catch(() => {
+        setError("Could not load the live leaderboard right now.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [currentLeague]);
 
-            // Auto-assign league based on XP
-            if (currentXp > 6000) setCurrentLeague('Gold');
-            else if (currentXp > 3000) setCurrentLeague('Silver');
-            else setCurrentLeague('Bronze');
+  const leagueTheme = getLeagueTheme(currentLeague);
+  const topThree = useMemo(() => entries.slice(0, 3), [entries]);
+  const restUsers = useMemo(() => entries.slice(3), [entries]);
 
-        }).catch(() => {
-            const fallbackXp = (progress.stars * 10) + 2100;
-            setStats({ xp: fallbackXp, streak: 1 });
-        });
-    }, [progress]);
+  return (
+    <Box sx={{ position: "relative", minHeight: "100vh", pb: 10 }}>
+      <AnimatedBackground />
 
-    // Compute leaderboard based on selected league
-    const users = useMemo(() => {
-        const generated = generateMockUsers(currentLeague, 9);
-        const currentUser: LeaderboardUser = {
-            id: 'current',
-            name: progress.username || 'You',
-            xp: stats.xp,
-            streak: stats.streak,
-            isCurrentUser: true
-        };
+      <Box sx={{ position: "relative", zIndex: 1, px: { xs: 0.5, sm: 1.5 }, pt: { xs: 1, md: 2 } }}>
+        <MotionCard initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} sx={{ ...glassCardSx, overflow: "hidden", mb: 3 }}>
+          <CardContent sx={{ p: { xs: 2.2, sm: 3.2 } }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1.1fr 0.9fr" }, gap: 2.5, alignItems: "center" }}>
+              <Box>
+                <Stack direction="row" spacing={1.2} sx={{ alignItems: "center", mb: 2 }}>
+                  <IconButton onClick={() => navigate("/home")} sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink }}>
+                    <ArrowBackRoundedIcon />
+                  </IconButton>
+                  <Chip icon={leagueTheme.icon} label="Weekly leagues" sx={{ bgcolor: playfulPalette.lemon, color: playfulPalette.ink, fontWeight: 800, borderRadius: 999 }} />
+                </Stack>
 
-        let pool = generated;
+                <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1.02, fontSize: { xs: "1.9rem", md: "2.8rem" }, maxWidth: 520 }}>
+                  Cheerful rankings help kids feel progress, excitement, and healthy competition.
+                </Typography>
 
-        // Only inject current user into their correct or expected league to avoid weird UX
-        // For demonstration, we'll put them in whatever league is selected, 
-        // but maybe adjust their XP so they don't look completely out of place?
-        // Actually, just inserting them exactly as they are is fine.
-        pool.push(currentUser);
+                <Typography sx={{ color: playfulPalette.inkSoft, mt: 1.4, maxWidth: 560, lineHeight: 1.7 }}>
+                  The leaderboard now uses brighter colors and simpler rank signals so children can quickly understand who is climbing.
+                </Typography>
+              </Box>
 
-        return pool
-            .sort((a, b) => b.xp - a.xp)
-            .map((u, index) => ({ ...u, rank: index + 1 }));
-    }, [currentLeague, stats, progress.username]);
+              <Box sx={{ ...glassCardSx, p: 2.2, background: leagueTheme.hero }}>
+                <Typography sx={{ color: "rgba(40,75,99,0.72)", fontSize: "0.9rem", mb: 0.4 }}>Current standing</Typography>
+                <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.45rem", letterSpacing: "-0.03em" }}>{currentLeague} League</Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap", gap: 1 }}>
+                  <Chip label={`${currentUser?.xp || 0} XP`} sx={{ bgcolor: "rgba(255,255,255,0.56)", color: playfulPalette.ink, fontWeight: 800 }} />
+                  <Chip label={`${currentUser?.streak || 1} day streak`} sx={{ bgcolor: "rgba(255,255,255,0.56)", color: playfulPalette.ink, fontWeight: 800 }} />
+                </Stack>
+              </Box>
+            </Box>
+          </CardContent>
+        </MotionCard>
 
-    const getRankColor = (index: number) => {
-        if (index === 0) return '#FFD700'; // Gold
-        if (index === 1) return '#C0C0C0'; // Silver
-        if (index === 2) return '#CD7F32'; // Bronze
-        return '#E0E0E0';
-    };
+        <MotionCard initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} sx={{ ...glassCardSx, mb: 3 }}>
+          <CardContent sx={{ p: { xs: 1, sm: 1.3 } }}>
+            <Tabs
+              value={currentLeague}
+              onChange={(_event, newValue: LeagueType) => setCurrentLeague(newValue)}
+              variant="fullWidth"
+              sx={{
+                "& .MuiTabs-indicator": {
+                  height: 3,
+                  borderRadius: 999,
+                  background: playfulPalette.candyGradient,
+                },
+              }}
+            >
+              <Tab value="Bronze" label="Bronze" icon={<StarRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800 }} />
+              <Tab value="Silver" label="Silver" icon={<ShieldRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800 }} />
+              <Tab value="Gold" label="Gold" icon={<WorkspacePremiumRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800 }} />
+            </Tabs>
+          </CardContent>
+        </MotionCard>
 
-    const getLeagueColor = (league: LeagueType) => {
-        if (league === 'Gold') return '#FFCA28';
-        if (league === 'Silver') return '#BDBDBD';
-        return '#FF8A65'; // Bronze
-    };
+        {loading && (
+          <Box sx={{ display: "grid", placeItems: "center", py: 4 }}>
+            <CircularProgress sx={{ color: playfulPalette.coral }} />
+          </Box>
+        )}
 
-    const getLeagueIcon = (league: LeagueType) => {
-        if (league === 'Gold') return <WorkspacePremium />;
-        if (league === 'Silver') return <Security />;
-        return <Star />;
-    };
+        {error && !loading && (
+          <Alert severity="info" sx={{ mb: 3, borderRadius: 3 }}>
+            {error}
+          </Alert>
+        )}
 
-    const handleLeagueChange = (_: React.SyntheticEvent, newValue: LeagueType) => {
-        setCurrentLeague(newValue);
-    };
-
-    return (
-        <Box sx={{ minHeight: '100vh', backgroundColor: '#F9FBE7', fontFamily: '"Nunito", sans-serif', pb: 10 }}>
-            {/* Header */}
-            <Box sx={{ background: `linear-gradient(135deg, ${getLeagueColor(currentLeague)} 0%, ${getLeagueColor(currentLeague)}dd 100%)`, color: 'white', pt: 4, pb: 0, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, mb: 4, boxShadow: `0 8px 24px ${getLeagueColor(currentLeague)}66`, position: 'relative', overflow: 'hidden', transition: 'background 0.3s ease' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, mb: 2 }}>
-                    <IconButton onClick={() => navigate('/home')} sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.2)' }}>
-                        <ArrowBack />
-                    </IconButton>
-                    <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                        Weekly Leagues
-                    </Typography>
-                    <Box sx={{ width: 40 }} />
-                </Box>
-
-                <Tabs
-                    value={currentLeague}
-                    onChange={handleLeagueChange}
-                    centered
-                    TabIndicatorProps={{ style: { backgroundColor: 'white', height: 4, borderRadius: '4px 4px 0 0' } }}
-                    sx={{
-                        '& .MuiTab-root': { color: 'rgba(255,255,255,0.6)', fontWeight: 800, fontSize: '1.1rem', py: 2, minWidth: '33.33%' },
-                        '& .Mui-selected': { color: 'white !important' }
-                    }}
+        {!loading && (
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2.2, mb: 3 }}>
+          {topThree.map((user, index) => (
+            <MotionCard key={user.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.08 }} sx={{ ...glassCardSx, textAlign: "center", border: user.isCurrentUser ? `2px solid ${playfulPalette.coral}` : `1px solid ${playfulPalette.line}` }}>
+              <CardContent sx={{ p: 2.2 }}>
+                <Avatar
+                  sx={{
+                    mx: "auto",
+                    mb: 1.2,
+                    width: 62,
+                    height: 62,
+                    bgcolor: index === 0 ? playfulPalette.lemon : index === 1 ? playfulPalette.lilac : playfulPalette.peach,
+                    color: playfulPalette.ink,
+                    fontWeight: 900,
+                  }}
                 >
-                    <Tab value="Bronze" label="Bronze" icon={getLeagueIcon('Bronze')} iconPosition="start" />
-                    <Tab value="Silver" label="Silver" icon={getLeagueIcon('Silver')} iconPosition="start" />
-                    <Tab value="Gold" label="Gold" icon={getLeagueIcon('Gold')} iconPosition="start" />
-                </Tabs>
-            </Box>
+                  {user.name.charAt(0).toUpperCase()}
+                </Avatar>
+                <Chip label={`#${user.rank}`} sx={{ mb: 1.2, bgcolor: leagueTheme.soft, color: leagueTheme.accent, fontWeight: 800 }} />
+                <Typography sx={{ color: playfulPalette.ink, fontWeight: 800 }}>
+                  {user.name} {user.isCurrentUser ? "(You)" : ""}
+                </Typography>
+                <Typography sx={{ color: playfulPalette.inkSoft, mt: 0.5 }}>{user.xp} XP</Typography>
+                <Chip
+                  icon={<LocalFireDepartmentRoundedIcon sx={{ color: `${playfulPalette.coral} !important` }} />}
+                  label={`${user.streak} days`}
+                  size="small"
+                  sx={{ mt: 1.2, bgcolor: playfulPalette.softPink, color: playfulPalette.ink, fontWeight: 800 }}
+                />
+              </CardContent>
+            </MotionCard>
+          ))}
+          </Box>
+        )}
 
-            {/* Top 3 Promotion Zone Indicator */}
-            {currentLeague !== 'Gold' && (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3, mt: -1 }}>
-                    <Box sx={{ borderTop: `2px dashed ${getLeagueColor(currentLeague)}`, width: '100%', position: 'absolute', zIndex: 0, opacity: 0.4 }} />
-                    <Chip label="Top 3 Promote to Next League!" size="small" sx={{ bgcolor: `${getLeagueColor(currentLeague)}22`, color: getLeagueColor(currentLeague), fontWeight: 800, px: 2, zIndex: 1 }} />
-                </Box>
-            )}
+        <AnimatePresence mode="wait">
+          <motion.div key={`${currentLeague}-${entries.length}`} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} transition={{ duration: 0.24 }}>
+            <Stack spacing={2}>
+              {restUsers.map((user) => (
+                <Card
+                  key={user.id}
+                  sx={{
+                    ...glassCardSx,
+                    borderRadius: 4,
+                    border: user.isCurrentUser ? `2px solid ${playfulPalette.coral}` : `1px solid ${playfulPalette.line}`,
+                    boxShadow: user.isCurrentUser ? "0 18px 32px rgba(255,139,167,0.18)" : "0 12px 24px rgba(255,190,120,0.1)",
+                  }}
+                >
+                  <CardContent sx={{ display: "flex", alignItems: "center", gap: 2, p: 2 }}>
+                    <Box sx={{ width: 38, textAlign: "center" }}>
+                      <Typography sx={{ color: playfulPalette.inkSoft, fontWeight: 900, fontSize: "1.1rem" }}>
+                        {user.rank}
+                      </Typography>
+                    </Box>
 
-            <Box sx={{ px: { xs: 2, md: 4 }, maxWidth: 800, mx: 'auto' }}>
-                <AnimatePresence mode="wait">
-                    <motion.div key={currentLeague} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>
-                        <Stack spacing={2}>
-                            {users.map((user, index) => {
-                                const isTop3 = index < 3;
-                                const isZonePromote = currentLeague !== 'Gold' && isTop3;
-                                const rankColor = getRankColor(index);
+                    <Avatar sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink, fontWeight: 900 }}>
+                      {user.name.charAt(0).toUpperCase()}
+                    </Avatar>
 
-                                return (
-                                    <Paper
-                                        key={user.id}
-                                        elevation={user.isCurrentUser ? 10 : 0}
-                                        sx={{
-                                            p: 2,
-                                            borderRadius: 4,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 2,
-                                            bgcolor: user.isCurrentUser ? 'white' : 'white',
-                                            border: user.isCurrentUser ? `3px solid ${getLeagueColor(currentLeague)}` : '1px solid #E0E0E0',
-                                            borderLeft: isZonePromote && !user.isCurrentUser ? `4px solid ${getLeagueColor(currentLeague)}` : user.isCurrentUser ? `4px solid ${getLeagueColor(currentLeague)}` : '1px solid #E0E0E0',
-                                            boxShadow: user.isCurrentUser ? `0 8px 30px ${getLeagueColor(currentLeague)}44` : '0 2px 10px rgba(0,0,0,0.03)',
-                                            transform: user.isCurrentUser ? 'scale(1.03)' : 'scale(1)',
-                                            transition: 'transform 0.2s, box-shadow 0.2s',
-                                            zIndex: user.isCurrentUser ? 10 : 1
-                                        }}
-                                    >
-                                        <Box sx={{ width: 45, textAlign: 'center' }}>
-                                            {isTop3 ? (
-                                                <Box sx={{ width: 36, height: 36, borderRadius: '50%', bgcolor: rankColor, display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', color: index === 1 ? '#424242' : 'white', fontWeight: 900, boxShadow: `0 4px 10px ${rankColor}88`, fontSize: '1.2rem' }}>
-                                                    {index + 1}
-                                                </Box>
-                                            ) : (
-                                                <Typography sx={{ fontWeight: 900, color: '#9E9E9E', fontSize: '1.2rem' }}>{index + 1}</Typography>
-                                            )}
-                                        </Box>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography sx={{ color: playfulPalette.ink, fontWeight: 800 }}>
+                        {user.name} {user.isCurrentUser ? "(You)" : ""}
+                      </Typography>
+                      <Typography sx={{ color: playfulPalette.inkSoft, fontSize: "0.92rem" }}>
+                        {user.xp} XP total
+                      </Typography>
+                    </Box>
 
-                                        <Avatar sx={{ bgcolor: isTop3 ? rankColor + '20' : '#F5F5F5', color: isTop3 ? rankColor : '#757575', fontWeight: 900, width: 48, height: 48 }}>
-                                            {user.name.charAt(0).toUpperCase()}
-                                        </Avatar>
-
-                                        <Box sx={{ flex: 1 }}>
-                                            <Typography sx={{ fontWeight: 800, color: user.isCurrentUser ? '#2D3748' : '#424242', fontSize: '1.1rem' }}>
-                                                {user.name} {user.isCurrentUser && ' (You)'}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '0.9rem', color: '#757575', fontWeight: 600 }}>
-                                                {user.xp} XP total
-                                            </Typography>
-                                        </Box>
-
-                                        <Box sx={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                            <Typography sx={{ fontWeight: 900, color: getLeagueColor(currentLeague), fontSize: '1.3rem' }}>
-                                                {user.xp} <Typography component="span" sx={{ fontSize: '0.8rem', color: '#9E9E9E' }}>XP</Typography>
-                                            </Typography>
-                                            {user.streak > 2 && (
-                                                <Chip
-                                                    icon={<Whatshot sx={{ color: '#E65100 !important', fontSize: '1.1rem' }} />}
-                                                    label={`${user.streak} days`}
-                                                    size="small"
-                                                    sx={{ bgcolor: '#FFF3E0', color: '#E65100', fontWeight: 800, height: 24, mt: 0.5, '& .MuiChip-label': { px: 1 } }}
-                                                />
-                                            )}
-                                        </Box>
-                                    </Paper>
-                                );
-                            })}
-                        </Stack>
-                    </motion.div>
-                </AnimatePresence>
-            </Box>
-
-            {/* Sticky Current User Footer (if not in top 6, could be pinned, but for now it's inline) */}
-        </Box>
-    );
+                    <Stack spacing={0.7} sx={{ alignItems: "flex-end" }}>
+                      <Chip label={`${user.xp} XP`} sx={{ bgcolor: playfulPalette.softPeach, color: playfulPalette.ink, fontWeight: 800 }} />
+                      {user.streak > 2 && (
+                        <Chip
+                          icon={<LocalFireDepartmentRoundedIcon sx={{ color: `${playfulPalette.coral} !important` }} />}
+                          label={`${user.streak} days`}
+                          size="small"
+                          sx={{ bgcolor: playfulPalette.softPink, color: playfulPalette.ink, fontWeight: 800 }}
+                        />
+                      )}
+                    </Stack>
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          </motion.div>
+        </AnimatePresence>
+      </Box>
+    </Box>
+  );
 };
 
 export default LeaderboardPage;

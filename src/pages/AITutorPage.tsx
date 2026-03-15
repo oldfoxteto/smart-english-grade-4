@@ -36,6 +36,7 @@ import {
 import { getCurrentUser } from '../core/auth';
 import { getVoiceSocket } from '../services/voiceSocket';
 import { VoiceCooldownBanner } from '../components/VoiceCooldownBanner';
+import { playfulPalette } from '../theme/playfulPalette';
 
 interface Message {
   id: string;
@@ -646,30 +647,83 @@ const AITutorPage = () => {
 
   if (isCallMode) {
     return (
-      <Box sx={{ height: '100dvh', bgcolor: '#101418', color: '#fff', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', p: 2.5 }}>
-          <Chip label={activeLang.label} />
-          <Chip label={SCENARIOS.find((s) => s.id === activeScenario)?.title || 'Tutor'} />
-          <Chip color={cooldownActive ? 'warning' : connected ? 'success' : 'default'} label={connectionStatus} />
+      <Box
+        sx={{
+          minHeight: { xs: "72vh", md: "78vh" },
+          borderRadius: 5,
+          overflow: "hidden",
+          background: playfulPalette.candyGradient,
+          color: playfulPalette.ink,
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: playfulPalette.glow,
+          border: `1px solid ${playfulPalette.line}`,
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 1,
+            flexWrap: "wrap",
+            p: 2.5,
+            borderBottom: `1px solid ${playfulPalette.line}`,
+            background: "rgba(255,255,255,0.3)",
+          }}
+        >
+          <Chip label={activeLang.label} sx={{ bgcolor: "rgba(255,255,255,0.6)", color: playfulPalette.ink, fontWeight: 800 }} />
+          <Chip label={SCENARIOS.find((s) => s.id === activeScenario)?.title || "Tutor"} sx={{ bgcolor: "rgba(255,255,255,0.6)", color: playfulPalette.ink, fontWeight: 800 }} />
+          <Chip
+            color={cooldownActive ? "warning" : connected ? "success" : "default"}
+            label={connectionStatus}
+            sx={{ fontWeight: 800 }}
+          />
         </Box>
 
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", px: 3 }}>
           <motion.div animate={botIsSpeaking ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 1.2, repeat: Infinity }}>
-            <Avatar sx={{ width: 124, height: 124, bgcolor: '#2E7D32', fontSize: '3rem' }}>AI</Avatar>
+            <Avatar
+              sx={{
+                width: 132,
+                height: 132,
+                bgcolor: "rgba(255,255,255,0.56)",
+                color: playfulPalette.ink,
+                fontSize: "3rem",
+                boxShadow: "0 18px 42px rgba(255, 139, 167, 0.18)",
+                border: `1px solid ${playfulPalette.line}`,
+              }}
+            >
+              AI
+            </Avatar>
           </motion.div>
-          <Typography sx={{ mt: 2, fontWeight: 800 }}>{botIsSpeaking ? 'Tutor speaking...' : isListening ? 'Listening...' : 'Thinking...'}</Typography>
+          <Typography sx={{ mt: 2, fontWeight: 900, fontSize: "1.15rem" }}>
+            {botIsSpeaking ? "Tutor speaking..." : isListening ? "Listening..." : "Thinking..."}
+          </Typography>
 
           {latestCorrection && (
-            <Paper sx={{ mt: 3, p: 1.5, bgcolor: 'rgba(255,235,59,0.12)', border: '1px solid rgba(255,235,59,0.35)' }}>
-              <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 700, fontSize: '0.85rem' }}>
+            <Paper
+              sx={{
+                mt: 3,
+                p: 1.6,
+                maxWidth: 420,
+                borderRadius: 3,
+                bgcolor: "rgba(255,255,255,0.52)",
+                color: playfulPalette.ink,
+                border: `1px solid ${playfulPalette.line}`,
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              <Typography sx={{ display: "flex", alignItems: "center", gap: 0.7, fontWeight: 700, fontSize: "0.88rem" }}>
                 <TipsAndUpdates fontSize="small" /> Suggestion: {latestCorrection}
               </Typography>
             </Paper>
           )}
         </Box>
 
-        <Box sx={{ px: 4, py: 2, minHeight: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography sx={{ textAlign: 'center', fontSize: '1.15rem' }}>{input || (botIsSpeaking ? messages[messages.length - 1]?.text : '')}</Typography>
+        <Box sx={{ px: 4, py: 2, minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Typography sx={{ textAlign: "center", fontSize: "1.08rem", color: playfulPalette.ink }}>
+            {input || (botIsSpeaking ? messages[messages.length - 1]?.text : "")}
+          </Typography>
         </Box>
 
         {cooldownActive && cooldownLeft !== null && (
@@ -678,8 +732,8 @@ const AITutorPage = () => {
           </Box>
         )}
 
-        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, pb: 5 }}>
-          <Fab onClick={toggleListen} sx={{ bgcolor: isListening ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+        <Box sx={{ display: "flex", justifyContent: "center", gap: 3, pb: 4, pt: 1 }}>
+          <Fab onClick={toggleListen} sx={{ bgcolor: isListening ? "#F7FBFC" : "rgba(255,255,255,0.55)", color: playfulPalette.ink }}>
             {isListening ? <Mic /> : <MicOff />}
           </Fab>
           <Fab color="error" onClick={toggleCallMode}>
@@ -691,26 +745,59 @@ const AITutorPage = () => {
   }
 
   return (
-    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'linear-gradient(180deg, #f2f8f3, #f8fce8)' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#2E7D32', color: '#fff' }}>
-        <IconButton onClick={() => navigate(-1)} sx={{ color: '#fff' }}>
-          <ArrowBack />
-        </IconButton>
+    <Box
+      sx={{
+        position: "relative",
+        minHeight: { xs: "72vh", md: "78vh" },
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: 5,
+        overflow: "hidden",
+        background: "linear-gradient(180deg, #fffdf4 0%, #fff7ee 100%)",
+        boxShadow: playfulPalette.glow,
+        border: `1px solid ${playfulPalette.line}`,
+      }}
+    >
+      <Box
+        sx={{
+          p: { xs: 1.6, md: 2 },
+          background: playfulPalette.heroGradient,
+          color: playfulPalette.ink,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.2, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.2 }}>
+            <IconButton onClick={() => navigate(-1)} sx={{ color: playfulPalette.ink, bgcolor: "rgba(255,255,255,0.55)" }}>
+              <ArrowBack />
+            </IconButton>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.25)' }}>AI</Avatar>
-          <Box>
-            <Typography sx={{ fontWeight: 800, lineHeight: 1.1 }}>LISAN Tutor</Typography>
-            <Typography sx={{ fontSize: '0.72rem' }}>Secure AI Proxy</Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Avatar sx={{ width: 42, height: 42, bgcolor: "rgba(255,255,255,0.55)", color: playfulPalette.ink }}>AI</Avatar>
+              <Box>
+                <Typography sx={{ fontWeight: 900, lineHeight: 1.1 }}>LISAN Tutor</Typography>
+                <Typography sx={{ fontSize: "0.76rem", color: "rgba(40,75,99,0.72)" }}>Secure AI practice</Typography>
+              </Box>
+            </Box>
           </Box>
-          {aiFallbackMode && <Chip size="small" label="Fallback Mode" color="warning" sx={{ fontWeight: 700 }} />}
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            {aiFallbackMode && <Chip size="small" label="Fallback Mode" color="warning" sx={{ fontWeight: 700 }} />}
+            <Chip
+              size="small"
+              label={connected ? "Voice ready" : "Text mode"}
+              sx={{ bgcolor: "rgba(255,255,255,0.55)", color: playfulPalette.ink, fontWeight: 800 }}
+            />
+            <Tooltip title="Language">
+              <IconButton onClick={(e) => setLangMenuAnchor(e.currentTarget)} sx={{ color: playfulPalette.ink, bgcolor: "rgba(255,255,255,0.55)" }}>
+                {activeLang.flag}
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
 
-        <Tooltip title="Language">
-          <IconButton onClick={(e) => setLangMenuAnchor(e.currentTarget)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)' }}>
-            {activeLang.flag}
-          </IconButton>
-        </Tooltip>
+        <Typography sx={{ mt: 1.6, color: "rgba(40,75,99,0.78)", maxWidth: 720, lineHeight: 1.65 }}>
+          Switch between scenarios, type or speak naturally, and let the tutor correct and guide the conversation.
+        </Typography>
       </Box>
 
       <Menu anchorEl={langMenuAnchor} open={Boolean(langMenuAnchor)} onClose={() => setLangMenuAnchor(null)}>
@@ -728,8 +815,29 @@ const AITutorPage = () => {
         ))}
       </Menu>
 
-      <Box sx={{ p: 1, display: 'flex', gap: 1, overflowX: 'auto', bgcolor: '#fff', borderBottom: '1px solid #e8efe8' }}>
-        <Button variant="contained" onClick={toggleCallMode} sx={{ borderRadius: 8, fontWeight: 800 }} startIcon={<Call />}>
+      <Box
+        sx={{
+          p: 1.2,
+          display: "flex",
+          gap: 1,
+          overflowX: "auto",
+          bgcolor: "rgba(255,255,255,0.92)",
+          borderBottom: `1px solid ${playfulPalette.line}`,
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <Button
+          variant="contained"
+          onClick={toggleCallMode}
+          sx={{
+            borderRadius: 999,
+            fontWeight: 900,
+            px: 2,
+            color: playfulPalette.ink,
+            background: playfulPalette.actionGradient,
+          }}
+          startIcon={<Call />}
+        >
           Voice Call
         </Button>
         {SCENARIOS.map((scenario) => (
@@ -746,13 +854,13 @@ const AITutorPage = () => {
       </Box>
 
       {aiFallbackMode && (
-        <Alert severity="warning" sx={{ m: 1.5 }}>
+        <Alert severity="warning" sx={{ m: 1.5, borderRadius: 3 }}>
           Fallback mode is active. Vision features are temporarily disabled until real AI is enabled.
         </Alert>
       )}
 
       {errorText && (
-        <Alert severity="error" sx={{ m: 1.5 }}>
+        <Alert severity="error" sx={{ m: 1.5, borderRadius: 3 }}>
           {errorText}
         </Alert>
       )}
@@ -793,7 +901,7 @@ const AITutorPage = () => {
         )}
       </AnimatePresence>
 
-      <Box sx={{ flex: 1, overflowY: 'auto', px: 2, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box sx={{ flex: 1, overflowY: 'auto', px: { xs: 1.2, sm: 2 }, py: 1.8, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <AnimatePresence initial={false}>
           {messages.map((message, index) => {
             const isBot = message.role === 'bot';
@@ -801,15 +909,25 @@ const AITutorPage = () => {
               <motion.div key={message.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: isBot ? 'flex-start' : 'flex-end' }}>
                   <Box sx={{ display: 'flex', gap: 1, maxWidth: '86%', alignItems: 'flex-end', flexDirection: isBot ? 'row' : 'row-reverse' }}>
-                    {isBot && <Avatar sx={{ bgcolor: '#2E7D32', width: 32, height: 32 }}>AI</Avatar>}
-                    <Paper sx={{ p: 1.5, px: 2, borderRadius: isBot ? '14px 14px 14px 4px' : '14px 14px 4px 14px', bgcolor: isBot ? '#fff' : '#2E7D32', color: isBot ? '#263238' : '#fff' }}>
+                    {isBot && <Avatar sx={{ bgcolor: playfulPalette.sky, color: playfulPalette.ink, width: 32, height: 32 }}>AI</Avatar>}
+                    <Paper
+                      sx={{
+                        p: 1.5,
+                        px: 2,
+                        borderRadius: isBot ? '18px 18px 18px 6px' : '18px 18px 6px 18px',
+                        bgcolor: isBot ? 'rgba(255,255,255,0.96)' : playfulPalette.candyGradient,
+                        color: playfulPalette.ink,
+                        boxShadow: isBot ? '0 12px 30px rgba(255,190,120,0.14)' : '0 14px 30px rgba(255,139,167,0.24)',
+                        border: `1px solid ${playfulPalette.line}`,
+                      }}
+                    >
                       {message.imageBase64 && <img src={message.imageBase64} alt="captured" style={{ width: 180, borderRadius: 8, marginBottom: 8 }} />}
                       <Typography sx={{ whiteSpace: 'pre-wrap' }}>{message.isTyping ? '...' : message.text}</Typography>
                     </Paper>
                   </Box>
 
                   {index === messages.length - 1 && isBot && latestCorrection && (
-                    <Box sx={{ mt: 0.75, ml: 5, px: 1, py: 0.5, bgcolor: '#fff9c4', borderRadius: 1.5 }}>
+                    <Box sx={{ mt: 0.75, ml: 5, px: 1, py: 0.5, bgcolor: playfulPalette.softPeach, borderRadius: 1.5 }}>
                       <Typography sx={{ fontSize: '0.78rem', fontWeight: 700 }}>Tip: {latestCorrection}</Typography>
                     </Box>
                   )}
@@ -822,7 +940,7 @@ const AITutorPage = () => {
         <div ref={endRef} />
       </Box>
 
-      <Box sx={{ p: 1.5, bgcolor: '#fff', borderTop: '1px solid #ecf2ec' }}>
+      <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.92)', borderTop: `1px solid ${playfulPalette.line}`, backdropFilter: 'blur(14px)' }}>
         <TextField
           fullWidth
           multiline
@@ -839,10 +957,14 @@ const AITutorPage = () => {
           InputProps={{
             endAdornment: (
               <InputAdornment position="end" sx={{ gap: 0.5 }}>
-                <IconButton onClick={toggleListen} sx={{ bgcolor: isListening ? '#f44336' : '#ff9800', color: '#fff' }}>
+                <IconButton onClick={toggleListen} sx={{ bgcolor: isListening ? '#f44336' : playfulPalette.peach, color: '#fff' }}>
                   {isListening ? <MicOff /> : <Mic />}
                 </IconButton>
-                <IconButton onClick={() => void sendRef.current()} disabled={loading || (!input.trim() && activeScenario !== 'vision')} sx={{ bgcolor: '#2E7D32', color: '#fff' }}>
+                <IconButton
+                  onClick={() => void sendRef.current()}
+                  disabled={loading || (!input.trim() && activeScenario !== 'vision')}
+                  sx={{ bgcolor: playfulPalette.sky, color: playfulPalette.ink }}
+                >
                   <Send />
                 </IconButton>
               </InputAdornment>

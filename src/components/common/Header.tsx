@@ -1,9 +1,21 @@
-import { AppBar, Box, Chip, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import {
+  AppBar,
+  Box,
+  Chip,
+  IconButton,
+  Stack,
+  Toolbar,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
 import { useNavigate } from "react-router-dom";
 import { useProgress } from "../../core/ProgressContext";
 import { clearTokens } from "../../core/auth";
+import { playfulPalette } from "../../theme/playfulPalette";
 
 const Header = () => {
   const navigate = useNavigate();
@@ -16,49 +28,154 @@ const Header = () => {
   };
 
   return (
-    <AppBar position="static" elevation={0} sx={{ background: "linear-gradient(135deg, #0B4B88 0%, #0C7FA0 100%)", mb: 0 }}>
-      <Toolbar sx={{ py: 1, minHeight: { xs: 68, md: 74 }, gap: 1 }}>
-        <Box sx={{ display: "flex", alignItems: "center", cursor: "pointer", flexGrow: 1, minWidth: 0 }} onClick={() => navigate("/home")}>
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        background: "transparent",
+        boxShadow: "none",
+        pt: { xs: 1.25, md: 1.75 },
+      }}
+    >
+      <Toolbar
+        sx={{
+          minHeight: { xs: 72, md: 82 },
+          px: { xs: 1.5, sm: 2.5, md: 3.5 },
+        }}
+      >
+        <Box
+          sx={{
+            width: "100%",
+            mx: "auto",
+            maxWidth: 1120,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1.5,
+            px: { xs: 1.5, sm: 2, md: 2.5 },
+            py: 1.2,
+            borderRadius: 4,
+            background: playfulPalette.headerGradient,
+            backdropFilter: "blur(18px)",
+            border: `1px solid ${playfulPalette.line}`,
+            boxShadow: playfulPalette.glow,
+          }}
+        >
           <Box
+            onClick={() => navigate("/home")}
             sx={{
-              width: { xs: 36, md: 42 },
-              height: { xs: 36, md: 42 },
-              borderRadius: 1.8,
-              background: "rgba(255,255,255,0.24)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              mr: 1.1,
-              color: "white",
-              fontWeight: 900
+              gap: 1.2,
+              minWidth: 0,
+              cursor: "pointer",
+              flexShrink: 1,
             }}
           >
-            LS
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="h6" sx={{ color: "white", fontWeight: 900, lineHeight: 1.1, fontSize: { xs: "1rem", md: "1.15rem" } }}>
-              لسان AI
-            </Typography>
-            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.82)", fontWeight: 600, display: { xs: "none", sm: "block" } }}>
-              تعلم اللغات للعرب
-            </Typography>
-          </Box>
-        </Box>
+            <Box
+              sx={{
+                width: { xs: 42, md: 48 },
+                height: { xs: 42, md: 48 },
+                borderRadius: 2.5,
+                display: "grid",
+                placeItems: "center",
+                color: playfulPalette.ink,
+                fontWeight: 900,
+                letterSpacing: "-0.04em",
+                background: playfulPalette.actionGradient,
+                boxShadow: "0 10px 24px rgba(255, 190, 120, 0.24)",
+              }}
+            >
+              LS
+            </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Chip label={`XP ${progress.stars}`} size="small" sx={{ background: "rgba(255,255,255,0.2)", color: "white", fontWeight: 700 }} />
-          <Chip label={`مستوى ${progress.level}`} size="small" sx={{ background: "rgba(255,200,0,0.32)", color: "white", fontWeight: 700 }} />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography
+                sx={{
+                  color: playfulPalette.ink,
+                  fontWeight: 900,
+                  lineHeight: 1.05,
+                  letterSpacing: "-0.03em",
+                  fontSize: { xs: "1rem", md: "1.12rem" },
+                }}
+              >
+                Lisan AI
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "rgba(40,75,99,0.78)",
+                  fontWeight: 600,
+                  display: { xs: "none", sm: "block" },
+                }}
+              >
+                Learn with AI, lessons, and daily practice
+              </Typography>
+            </Box>
+          </Box>
 
-          <Tooltip title={progress.username}>
-            <IconButton sx={{ width: 34, height: 34, background: "rgba(255,255,255,0.25)", color: "white" }}>
-              <PersonRoundedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="تسجيل الخروج">
-            <IconButton onClick={handleLogout} sx={{ width: 34, height: 34, background: "rgba(255,255,255,0.25)", color: "white" }}>
-              <LogoutRoundedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+              justifyContent: "flex-end",
+              flexShrink: 0,
+            }}
+          >
+            <Chip
+              icon={<AutoAwesomeRoundedIcon sx={{ color: `${playfulPalette.coral} !important` }} />}
+              label={`${progress.stars} XP`}
+              size="small"
+              sx={{
+                display: { xs: "none", sm: "inline-flex" },
+                bgcolor: "rgba(255,255,255,0.52)",
+                color: playfulPalette.ink,
+                fontWeight: 800,
+                borderRadius: 2.5,
+              }}
+            />
+            <Chip
+              icon={<LocalFireDepartmentRoundedIcon sx={{ color: `${playfulPalette.peach} !important` }} />}
+              label={`Lvl ${progress.level}`}
+              size="small"
+              sx={{
+                bgcolor: "rgba(255,255,255,0.52)",
+                color: playfulPalette.ink,
+                fontWeight: 800,
+                borderRadius: 2.5,
+              }}
+            />
+
+            <Tooltip title={progress.username || "Student"}>
+              <IconButton
+                sx={{
+                  width: 38,
+                  height: 38,
+                  color: playfulPalette.ink,
+                  bgcolor: "rgba(255,255,255,0.52)",
+                  border: `1px solid ${playfulPalette.line}`,
+                }}
+              >
+                <PersonRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Log out">
+              <IconButton
+                onClick={handleLogout}
+                sx={{
+                  width: 38,
+                  height: 38,
+                  color: playfulPalette.ink,
+                  bgcolor: "rgba(255,255,255,0.52)",
+                  border: `1px solid ${playfulPalette.line}`,
+                }}
+              >
+                <LogoutRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
         </Box>
       </Toolbar>
     </AppBar>

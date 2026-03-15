@@ -1,6 +1,8 @@
 // محتوى الإنجليزية A1 - 50 درس أساسي
 // مصمم خصيصاً للمستخدم العربي
 
+import { generatedA1Lessons } from './a1GeneratedLessons';
+
 export interface A1Lesson {
   id: string;
   title: string;
@@ -71,7 +73,7 @@ export interface Exercise {
 }
 
 // الدروس الأولى - التحيات والأساسيات
-export const a1Lessons: A1Lesson[] = [
+const coreA1Lessons: A1Lesson[] = [
   {
     id: 'a1-001',
     title: 'Hello and Goodbye',
@@ -488,6 +490,8 @@ export const a1Lessons: A1Lesson[] = [
 
 // المزيد من الدروس سيتم إضافتها للوصول إلى 50 درس
 // هذا مجرد بداية للمحتوى التعليمي
+
+export const a1Lessons: A1Lesson[] = [...coreA1Lessons, ...generatedA1Lessons];
 
 export const getA1LessonById = (id: string): A1Lesson | undefined => {
   return a1Lessons.find(lesson => lesson.id === id);

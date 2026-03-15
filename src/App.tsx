@@ -17,7 +17,7 @@ const AnalyticsDashboardPage = lazy(() => import('./pages/AnalyticsDashboardPage
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
 const MainLayout = lazy(() => import('./layouts/MainLayout'));
 const LessonPage = lazy(() => import('./pages/LessonPage'));
-const LessonsPage = lazy(() => import('./pages/LessonsPageFixed'));
+const LessonsPage = lazy(() => import('./pages/LessonsPage'));
 const SpeedRushPage = lazy(() => import('./pages/SpeedRushPage'));
 const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
 const ReadingQuestPage = lazy(() => import('./pages/ReadingQuestPage'));

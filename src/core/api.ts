@@ -255,6 +255,132 @@ export interface ApiHealthResponse {
   };
 }
 
+export interface UserSettingsPayload {
+  profile: {
+    name: string;
+    email: string;
+    avatar: string;
+    level: number;
+    xp: number;
+    language: 'ar' | 'en';
+  };
+  notifications: {
+    email: boolean;
+    push: boolean;
+    sound: boolean;
+    vibration: boolean;
+    desktop: boolean;
+  };
+  audio: {
+    microphone: boolean;
+    speaker: boolean;
+    volume: number;
+    inputDevice: string;
+    outputDevice: string;
+  };
+  video: {
+    camera: boolean;
+    quality: 'low' | 'medium' | 'high';
+    device: string;
+  };
+  appearance: {
+    theme: 'light' | 'dark' | 'auto';
+    language: 'ar' | 'en';
+    fontSize: 'small' | 'medium' | 'large';
+    compactMode: boolean;
+  };
+  privacy: {
+    profileVisibility: 'public' | 'private';
+    showProgress: boolean;
+    showAchievements: boolean;
+    dataCollection: boolean;
+  };
+  performance: {
+    autoPlay: boolean;
+    preloadContent: boolean;
+    reduceAnimations: boolean;
+    offlineMode: boolean;
+  };
+}
+
+export interface UserSettingsResponse {
+  settings: UserSettingsPayload;
+  updatedAt: string | null;
+}
+
+export interface PracticeExerciseResponse {
+  id: string;
+  title: string;
+  arabicTitle: string;
+  description: string;
+  arabicDescription: string;
+  type: 'pronunciation' | 'listening' | 'speaking' | 'grammar' | 'vocabulary';
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  duration: number;
+  completed: boolean;
+  score: number;
+  bestScore: number;
+  attempts: number;
+  category: string;
+}
+
+export interface PracticeCatalogResponse {
+  exercises: PracticeExerciseResponse[];
+  updatedAt: string;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  xp: number;
+  streak: number;
+  league: 'Bronze' | 'Silver' | 'Gold';
+  isCurrentUser?: boolean;
+  rank: number;
+}
+
+export interface LeaderboardResponse {
+  league: 'Bronze' | 'Silver' | 'Gold';
+  entries: LeaderboardEntry[];
+  currentUser: LeaderboardEntry | null;
+  generatedAt: string;
+}
+
+export interface ReadingQuestParagraph {
+  text: string;
+  dictionary: Record<string, string>;
+  quiz: {
+    question: string;
+    options: string[];
+    correctIndex: number;
+  };
+}
+
+export interface ReadingQuestSummary {
+  id: string;
+  title: string;
+  titleAr: string;
+  image: string;
+  paragraphCount: number;
+  completed: boolean;
+  bestScore: number;
+}
+
+export interface ReadingQuestDetailResponse {
+  quest: {
+    id: string;
+    title: string;
+    titleAr: string;
+    image: string;
+    paragraphs: ReadingQuestParagraph[];
+  };
+  progress: {
+    completed: boolean;
+    bestScore: number;
+    completedAt: string | null;
+  };
+}
+
 // Progress & SRS (server-backed)
 export interface RemoteProgress {
   vocabularyCompleted: number[];
@@ -594,5 +720,47 @@ export async function generateDynamicContent(payload: { topic: string; level?: s
       level: payload.level || 'A1',
       mode: payload.mode || 'story',
     }),
+  });
+}
+
+export async function getUserSettings() {
+  return apiRequest<UserSettingsResponse>('/settings');
+}
+
+export async function saveUserSettings(settings: UserSettingsPayload) {
+  return apiRequest<{ ok: boolean; settings: UserSettingsPayload; updatedAt: string }>('/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ settings }),
+  });
+}
+
+export async function getPracticeCatalog() {
+  return apiRequest<PracticeCatalogResponse>('/practice/catalog');
+}
+
+export async function completePracticeExercise(exerciseId: string, payload: { score: number; completed: boolean }) {
+  return apiRequest<{ ok: boolean; exercise: PracticeExerciseResponse }>(`/practice/exercises/${exerciseId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getLeaderboard(league?: 'Bronze' | 'Silver' | 'Gold') {
+  const query = league ? `?league=${league}` : '';
+  return apiRequest<LeaderboardResponse>(`/leaderboard${query}`);
+}
+
+export async function getReadingQuestSummaries() {
+  return apiRequest<{ quests: ReadingQuestSummary[] }>('/reading-quests');
+}
+
+export async function getReadingQuest(questId: string) {
+  return apiRequest<ReadingQuestDetailResponse>(`/reading-quests/${questId}`);
+}
+
+export async function completeReadingQuest(questId: string, bestScore = 100) {
+  return apiRequest<{ ok: boolean; completedAt: string; bestScore: number }>(`/reading-quests/${questId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ bestScore }),
   });
 }

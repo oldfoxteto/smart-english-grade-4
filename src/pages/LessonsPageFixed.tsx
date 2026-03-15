@@ -1,31 +1,69 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, IconButton, Paper, Tooltip, Zoom } from '@mui/material';
-import { ArrowBack, Lock, PlayArrow, Star } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import confetti from 'canvas-confetti';
-import { getAllA1Lessons, type A1Lesson } from '../core/a1Content';
-import { getLessonPathStatuses, type LessonPathStatus } from '../core/api';
+import { useEffect, useMemo, useState } from "react";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  IconButton,
+  LinearProgress,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
+import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
+import { motion } from "framer-motion";
+import confetti from "canvas-confetti";
+import { useNavigate } from "react-router-dom";
+import AnimatedBackground from "../components/AnimatedBackground";
+import { getLessonPathStatuses, type LessonPathStatus } from "../core/api";
+import { getAllA1Lessons, type A1Lesson } from "../core/a1Content";
 import {
   getMasteryState,
   getMasteryThreshold,
   getUnlockedLessonIds,
   subscribeToMasteryUpdates,
-} from '../core/masteryEngine';
-import { playClick, playSuccess, playWrong } from '../core/sounds';
+} from "../core/masteryEngine";
+import { playClick, playSuccess, playWrong } from "../core/sounds";
+import { playfulPalette } from "../theme/playfulPalette";
 
-const MotionBox = motion(Box);
-const MotionPaper = motion(Paper);
+const MotionCard = motion(Card);
 
-const getUnitBackground = (unit: number) => {
-  const backgrounds = [
-    'linear-gradient(180deg, #4CAF50 0%, #2E7D32 100%)',
-    'linear-gradient(180deg, #2196F3 0%, #1565C0 100%)',
-    'linear-gradient(180deg, #FF9800 0%, #EF6C00 100%)',
-    'linear-gradient(180deg, #9C27B0 0%, #6A1B9A 100%)',
-    'linear-gradient(180deg, #E91E63 0%, #AD1457 100%)',
-  ];
-  return backgrounds[(unit - 1) % backgrounds.length];
+const glassCardSx = {
+  borderRadius: 5,
+  border: `1px solid ${playfulPalette.line}`,
+  background: playfulPalette.glass,
+  boxShadow: playfulPalette.glow,
+  backdropFilter: "blur(12px)",
+};
+
+const getCategoryAccent = (lesson: A1Lesson) => {
+  if (lesson.category === "vocabulary") {
+      return {
+      gradient: "linear-gradient(135deg, #8DE6C2 0%, #79D7FF 100%)",
+      soft: playfulPalette.softMint,
+      text: "#24765B",
+    };
+  }
+  if (lesson.category === "grammar") {
+    return {
+      gradient: "linear-gradient(135deg, #79D7FF 0%, #B39DFF 100%)",
+      soft: playfulPalette.softBlue,
+      text: "#4168B5",
+    };
+  }
+  return {
+    gradient: "linear-gradient(135deg, #FFBE78 0%, #FF8BA7 100%)",
+    soft: playfulPalette.softPeach,
+    text: "#B35E3C",
+  };
 };
 
 const LessonsPage = () => {
@@ -36,7 +74,10 @@ const LessonsPage = () => {
 
   const allLessons = useMemo(() => getAllA1Lessons(), []);
   const masteryState = getMasteryState();
-  const unlockedIds = useMemo(() => new Set(getUnlockedLessonIds(allLessons, masteryState)), [allLessons, masteryState]);
+  const unlockedIds = useMemo(
+    () => new Set(getUnlockedLessonIds(allLessons, masteryState)),
+    [allLessons, masteryState]
+  );
   const threshold = getMasteryThreshold();
 
   useEffect(() => {
@@ -71,119 +112,199 @@ const LessonsPage = () => {
     const map = new Map<number, A1Lesson[]>();
     allLessons.forEach((lesson) => {
       if (!map.has(lesson.unit)) map.set(lesson.unit, []);
-      map.get(lesson.unit)!.push(lesson);
+      map.get(lesson.unit)?.push(lesson);
     });
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
   }, [allLessons]);
 
-  let globalLessonIndex = 0;
-
-  const totalMasteryscore = useMemo(() => {
+  const totalMasteryScore = useMemo(() => {
     if (remoteEnabled) {
       return Object.values(remoteStatusMap).reduce((sum, item) => sum + Number(item.masteryScore || 0), 0);
     }
-    return Object.values(masteryState.lessonMastery).reduce((sum, val) => sum + val, 0);
+    return Object.values(masteryState.lessonMastery).reduce((sum, value) => sum + value, 0);
   }, [masteryState, remoteEnabled, remoteStatusMap]);
+
+  const masteredCount = useMemo(() => {
+    if (remoteEnabled) {
+      return Object.values(remoteStatusMap).filter((item) => item.mastered).length;
+    }
+    return Object.values(masteryState.lessonMastery).filter((value) => value >= threshold).length;
+  }, [masteryState, remoteEnabled, remoteStatusMap, threshold]);
+
+  const unlockedCount = useMemo(() => {
+    if (remoteEnabled) {
+      return Object.values(remoteStatusMap).filter((item) => item.unlocked).length;
+    }
+    return unlockedIds.size;
+  }, [remoteEnabled, remoteStatusMap, unlockedIds]);
 
   const fireConfetti = () => {
     playSuccess();
     confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FFC107', '#4CAF50', '#2196F3', '#E91E63']
+      particleCount: 90,
+      spread: 72,
+      origin: { y: 0.7 },
+      colors: [playfulPalette.sky, playfulPalette.mint, playfulPalette.lemon, playfulPalette.coral],
     });
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', position: 'relative', fontFamily: '"Nunito", "Tajawal", sans-serif', overflowX: 'hidden', bgcolor: '#81C784' }}>
+    <Box sx={{ position: "relative", minHeight: "100vh", pb: 10 }}>
+      <AnimatedBackground />
 
-      <MotionBox
-        initial={{ y: -50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-        sx={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          p: 2, pt: 3,
-          background: 'rgba(255,255,255,0.2)',
-          backdropFilter: 'blur(15px)',
-          color: 'white',
-          position: 'sticky', top: 0, zIndex: 100,
-          boxShadow: '0 4px 30px rgba(0,0,0,0.1)',
-          borderBottom: '1px solid rgba(255,255,255,0.3)',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <IconButton onClick={() => { playClick(); navigate('/home'); }} sx={{ bgcolor: 'rgba(255,255,255,0.3)', color: 'white', width: 44, height: 44, '&:hover': { bgcolor: 'rgba(255,255,255,0.5)' } }}>
-            <ArrowBack />
-          </IconButton>
-          <Typography variant="h6" sx={{ fontWeight: 900, textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-            World Map
-          </Typography>
-        </Box>
-        <Paper onClick={fireConfetti} sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 0.5, borderRadius: 8, background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', color: '#FF9800', border: '2px solid #FFC107' }}>
-          <Typography sx={{ fontWeight: 900, fontSize: '1.1rem', color: '#F57C00' }}>{Math.floor(totalMasteryscore)}</Typography>
-          <Star sx={{ fontSize: '1.4rem', filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.1))' }} />
-        </Paper>
-      </MotionBox>
+      <Box sx={{ position: "relative", zIndex: 1, px: { xs: 0.5, sm: 1.5 }, pt: { xs: 1, md: 2 } }}>
+        <MotionCard
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          sx={{ ...glassCardSx, overflow: "hidden", mb: 3 }}
+        >
+          <CardContent sx={{ p: { xs: 2.2, sm: 3.2 } }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: "1.15fr 0.85fr" },
+                gap: 2.5,
+                alignItems: "center",
+              }}
+            >
+              <Box>
+                <Stack direction="row" spacing={1.2} sx={{ alignItems: "center", mb: 2 }}>
+                  <IconButton
+                    onClick={() => navigate("/home")}
+                    sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink }}
+                  >
+                    <ArrowBackRoundedIcon />
+                  </IconButton>
+                  <Chip
+                    icon={<SchoolRoundedIcon sx={{ color: `${playfulPalette.ink} !important` }} />}
+                    label="Learning path"
+                    sx={{ bgcolor: playfulPalette.lemon, color: playfulPalette.ink, fontWeight: 800, borderRadius: 999 }}
+                  />
+                </Stack>
 
-      <Box sx={{ width: '100%', position: 'relative', pb: 15 }}>
-        {units.map(([unitNum, lessons]) => {
-          const bg = getUnitBackground(unitNum);
-          return (
-            <Box key={unitNum} sx={{ position: 'relative', width: '100%', background: bg, py: 8, borderBottom: '8px solid rgba(0,0,0,0.1)' }}>
-
-              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 8, position: 'relative', zIndex: 2 }}>
-                <MotionPaper
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  whileInView={{ scale: 1, opacity: 1 }}
-                  viewport={{ once: true, margin: '-50px' }}
-                  whileHover={{ scale: 1.05, rotate: [-1, 1, -1, 0] }}
+                <Typography
                   sx={{
-                    background: 'rgba(255,255,255,0.95)',
-                    color: '#333', py: 2, px: 5,
-                    borderRadius: 8,
-                    boxShadow: '0 12px 24px rgba(0,0,0,0.2), inset 0 -4px 0 rgba(0,0,0,0.1)',
-                    border: '4px solid rgba(255,255,255,0.5)',
-                    textAlign: 'center'
+                    color: playfulPalette.ink,
+                    fontWeight: 900,
+                    letterSpacing: "-0.04em",
+                    lineHeight: 1.02,
+                    fontSize: { xs: "1.9rem", md: "2.8rem" },
+                    maxWidth: 520,
                   }}
                 >
-                  <Typography sx={{ fontWeight: 900, fontSize: '1.4rem', letterSpacing: '1px', textTransform: 'uppercase', color: '#1B5E20' }}>
-                    Unit {unitNum}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 800, color: '#546E7A' }}>
-                    {lessons.length} Lessons
-                  </Typography>
-                </MotionPaper>
+                  Follow your units, unlock lessons, and master them step by step.
+                </Typography>
+
+                <Typography sx={{ color: playfulPalette.inkSoft, mt: 1.4, maxWidth: 560, lineHeight: 1.7 }}>
+                  A brighter path helps the page feel friendlier for children while keeping mastery and unlock states easy to read.
+                </Typography>
+
+                <Stack direction="row" spacing={1} sx={{ mt: 2.2, flexWrap: "wrap", gap: 1 }}>
+                  <Chip
+                    icon={<AutoAwesomeRoundedIcon sx={{ color: `${playfulPalette.lilac} !important` }} />}
+                    label={`${unlockedCount} unlocked`}
+                    sx={{ bgcolor: playfulPalette.softLilac, color: playfulPalette.ink, fontWeight: 800, borderRadius: 2.5 }}
+                  />
+                  <Chip
+                    icon={<EmojiEventsRoundedIcon sx={{ color: `${playfulPalette.peach} !important` }} />}
+                    label={`${masteredCount} mastered`}
+                    sx={{ bgcolor: playfulPalette.softPeach, color: playfulPalette.ink, fontWeight: 800, borderRadius: 2.5 }}
+                  />
+                </Stack>
               </Box>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', maxWidth: 600, mx: 'auto', zIndex: 2 }}>
+              <Box
+                onClick={fireConfetti}
+                sx={{
+                  ...glassCardSx,
+                  p: 2.2,
+                  cursor: "pointer",
+                  background: playfulPalette.candyGradient,
+                  color: playfulPalette.ink,
+                }}
+              >
+                <Typography sx={{ color: "rgba(40,75,99,0.74)", fontSize: "0.9rem", mb: 0.6 }}>
+                  Total mastery
+                </Typography>
+                <Typography sx={{ fontWeight: 900, fontSize: "2rem", letterSpacing: "-0.04em" }}>
+                  {Math.floor(totalMasteryScore)}
+                </Typography>
+                <Typography sx={{ color: "rgba(40,75,99,0.74)", mt: 0.8, mb: 1.5 }}>
+                  Tap this card for a little celebration.
+                </Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={allLessons.length ? (masteredCount / allLessons.length) * 100 : 0}
+                  sx={{
+                    height: 10,
+                    borderRadius: 99,
+                    bgcolor: "rgba(255,255,255,0.45)",
+                    "& .MuiLinearProgress-bar": {
+                      borderRadius: 99,
+                      background: playfulPalette.actionGradient,
+                    },
+                  }}
+                />
+              </Box>
+            </Box>
+          </CardContent>
+        </MotionCard>
 
-                <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: '50%', transform: 'translateX(-50%)', width: 8, bgcolor: 'rgba(255,255,255,0.3)', borderRadius: 4, zIndex: 0 }} />
+        <Stack spacing={3}>
+          {units.map(([unitNum, lessons], unitIndex) => (
+            <MotionCard
+              key={unitNum}
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: unitIndex * 0.06 }}
+              sx={{ ...glassCardSx, overflow: "hidden" }}
+            >
+              <CardContent sx={{ p: { xs: 2.2, sm: 2.8 } }}>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1.4}
+                  sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", md: "center" }, mb: 2.2 }}
+                >
+                  <Box>
+                    <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.35rem", letterSpacing: "-0.03em" }}>
+                      Unit {unitNum}
+                    </Typography>
+                    <Typography sx={{ color: playfulPalette.inkSoft, mt: 0.5 }}>
+                      {lessons.length} lessons in this unit
+                    </Typography>
+                  </Box>
 
-                {lessons.map((lesson, lessonIndex) => {
-                  globalLessonIndex++;
-                  const remote = remoteStatusMap[lesson.id];
-                  const isUnlocked = remoteEnabled ? Boolean(remote?.unlocked) : unlockedIds.has(lesson.id);
-                  const masteryScore = remoteEnabled ? Number(remote?.masteryScore || 0) : masteryState.lessonMastery[lesson.id] || 0;
-                  const isMastered = remoteEnabled ? Boolean(remote?.mastered) : masteryScore >= threshold;
+                  <Chip
+                    label={`${lessons.filter((lesson) => {
+                      const remote = remoteStatusMap[lesson.id];
+                      const score = remoteEnabled ? Number(remote?.masteryScore || 0) : masteryState.lessonMastery[lesson.id] || 0;
+                      return remoteEnabled ? Boolean(remote?.mastered) : score >= threshold;
+                    }).length}/${lessons.length} mastered`}
+                    sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink, fontWeight: 800, borderRadius: 2.5 }}
+                  />
+                </Stack>
 
-                  const isCurrent = isUnlocked && !isMastered;
+                <Grid container spacing={2}>
+                  {lessons.map((lesson) => {
+                    const remote = remoteStatusMap[lesson.id];
+                    const isUnlocked = remoteEnabled ? Boolean(remote?.unlocked) : unlockedIds.has(lesson.id);
+                    const masteryScore = remoteEnabled ? Number(remote?.masteryScore || 0) : masteryState.lessonMastery[lesson.id] || 0;
+                    const isMastered = remoteEnabled ? Boolean(remote?.mastered) : masteryScore >= threshold;
+                    const isCurrent = isUnlocked && !isMastered;
+                    const accent = getCategoryAccent(lesson);
 
-                  const offsets = [0, 60, 0, -60];
-                  const xOffset = offsets[lessonIndex % offsets.length];
-
-                  return (
-                    <Box key={lesson.id} sx={{ position: 'relative', display: 'flex', justifyContent: 'center', width: '100%', zIndex: 1 }}>
-                      <motion.div
-                        initial={{ scale: 0, y: 30 }}
-                        whileInView={{ scale: 1, y: 0 }}
-                        viewport={{ once: true, margin: '-50px' }}
-                        transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-                        style={{ position: 'relative', left: `${xOffset}px` }}
-                      >
-                        <Tooltip TransitionComponent={Zoom} title={isUnlocked ? `${lesson.titleAr} (${masteryScore}%)` : "Locked"} placement="top" arrow>
-                          <Box
+                    return (
+                      <Grid key={lesson.id} size={{ xs: 12, md: 6 }}>
+                        <Tooltip
+                          title={
+                            isUnlocked
+                              ? `${lesson.titleAr || lesson.title} • ${Math.round(masteryScore)}% mastery`
+                              : "This lesson is still locked"
+                          }
+                        >
+                          <MotionCard
+                            whileHover={{ y: -3 }}
+                            whileTap={{ scale: isUnlocked ? 0.995 : 1 }}
                             onClick={() => {
                               if (isUnlocked) {
                                 playClick();
@@ -193,84 +314,135 @@ const LessonsPage = () => {
                               }
                             }}
                             sx={{
-                              width: 90, height: 90,
-                              borderRadius: '50%',
-                              background: isMastered
-                                ? 'linear-gradient(180deg, #FFD54F, #FFB300)'
-                                : isUnlocked
-                                  ? 'linear-gradient(180deg, #64B5F6, #1E88E5)'
-                                  : 'linear-gradient(180deg, #E0E0E0, #9E9E9E)',
-                              color: isUnlocked ? 'white' : '#757575',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              boxShadow: isMastered
-                                ? 'inset 0 -8px 0 #FF8F00, 0 8px 16px rgba(255, 179, 0, 0.4)'
-                                : isUnlocked
-                                  ? 'inset 0 -8px 0 #1565C0, 0 8px 16px rgba(30, 136, 229, 0.4)'
-                                  : 'inset 0 -8px 0 #757575, 0 4px 8px rgba(0,0,0,0.1)',
-                              cursor: isUnlocked ? 'pointer' : 'not-allowed',
-                              transition: 'transform 0.1s',
-                              position: 'relative',
-                              '&:active': isUnlocked ? {
-                                transform: 'scale(0.9) translateY(4px)',
-                                boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.2)'
-                              } : {}
+                              borderRadius: 4,
+                              cursor: isUnlocked ? "pointer" : "not-allowed",
+                              border: isCurrent ? `1px solid ${playfulPalette.coral}` : `1px solid ${playfulPalette.line}`,
+                              boxShadow: isCurrent
+                                ? "0 20px 38px rgba(255, 139, 167, 0.18)"
+                                : "0 12px 28px rgba(255, 190, 120, 0.12)",
+                              opacity: isUnlocked ? 1 : 0.72,
+                              overflow: "hidden",
                             }}
                           >
-                            {isCurrent && (
-                              <motion.div
-                                animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0, 0.8] }}
-                                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' } as any}
-                                style={{
-                                  position: 'absolute', top: -6, left: -6, right: -6, bottom: -6,
-                                  borderRadius: '50%', border: '4px solid white', pointerEvents: 'none'
-                                }}
-                              />
-                            )}
+                            <CardContent sx={{ p: 0 }}>
+                              <Box sx={{ display: "grid", gridTemplateColumns: "10px 1fr" }}>
+                                <Box sx={{ background: accent.gradient }} />
+                                <Box sx={{ p: 2.1 }}>
+                                  <Stack direction="row" spacing={1.2} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                                    <Box sx={{ flex: 1 }}>
+                                      <Typography sx={{ color: playfulPalette.ink, fontWeight: 800, fontSize: "1rem" }}>
+                                        {lesson.title}
+                                      </Typography>
+                                      <Typography sx={{ color: playfulPalette.inkSoft, mt: 0.45, fontSize: "0.9rem", lineHeight: 1.5 }}>
+                                        {lesson.titleAr || "Lesson content ready for practice."}
+                                      </Typography>
+                                    </Box>
 
-                            {isMastered && (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
-                                transition={{ delay: 0.2, type: 'spring' }}
-                              >
-                                <Star sx={{ fontSize: '3.5rem', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))', color: 'white' }} />
-                              </motion.div>
-                            )}
+                                    <Box
+                                      sx={{
+                                        width: 42,
+                                        height: 42,
+                                        borderRadius: "50%",
+                                        display: "grid",
+                                        placeItems: "center",
+                                        bgcolor: isMastered ? playfulPalette.softPeach : isUnlocked ? accent.soft : "#F5F7FA",
+                                        color: isMastered ? "#B35E3C" : isUnlocked ? accent.text : "#8DA0AA",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {isMastered ? (
+                                        <CheckCircleRoundedIcon fontSize="small" />
+                                      ) : isUnlocked ? (
+                                        <PlayArrowRoundedIcon fontSize="small" />
+                                      ) : (
+                                        <LockRoundedIcon fontSize="small" />
+                                      )}
+                                    </Box>
+                                  </Stack>
 
-                            {!isMastered && isUnlocked && <PlayArrow sx={{ fontSize: '3.5rem', ml: 0.5, filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.2))' }} />}
-                            {!isUnlocked && <Lock sx={{ fontSize: '2.5rem', opacity: 0.6 }} />}
+                                  <Stack direction="row" spacing={1} sx={{ mt: 1.4, flexWrap: "wrap", gap: 0.9 }}>
+                                    <Chip
+                                      label={lesson.category}
+                                      size="small"
+                                      sx={{
+                                        bgcolor: accent.soft,
+                                        color: accent.text,
+                                        fontWeight: 800,
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.05em",
+                                      }}
+                                    />
+                                    <Chip
+                                      label={`${lesson.duration} min`}
+                                      size="small"
+                                      sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink, fontWeight: 800 }}
+                                    />
+                                    <Chip
+                                      label={isMastered ? "Mastered" : isCurrent ? "Current" : isUnlocked ? "Unlocked" : "Locked"}
+                                      size="small"
+                                      sx={{
+                                        bgcolor: isMastered ? playfulPalette.softPink : isUnlocked ? playfulPalette.softMint : "#F7F8FB",
+                                        color: isMastered ? playfulPalette.coral : isUnlocked ? "#24765B" : "#7C8D96",
+                                        fontWeight: 800,
+                                      }}
+                                    />
+                                  </Stack>
 
-                            {isUnlocked && !isMastered && masteryScore > 0 && (
-                              <Box sx={{ position: 'absolute', top: -6, left: -6, right: -6, bottom: -6, borderRadius: '50%', border: '6px solid rgba(255,255,255,0.2)' }}>
-                                <Box sx={{
-                                  position: 'absolute', top: -6, left: -6, right: -6, bottom: -6, borderRadius: '50%',
-                                  border: '6px solid white',
-                                  clipPath: `polygon(50% 50%, 50% 0%, ${masteryScore >= 25 ? '100% 0%,' : ''} ${masteryScore >= 50 ? '100% 100%,' : ''} ${masteryScore >= 75 ? '0% 100%,' : ''} 0% ${100 - masteryScore}%, 50% 50%)`
-                                }} />
+                                  <Box sx={{ mt: 1.6 }}>
+                                    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", mb: 0.7 }}>
+                                      <Typography sx={{ color: playfulPalette.inkSoft, fontSize: "0.82rem", fontWeight: 700 }}>
+                                        Mastery progress
+                                      </Typography>
+                                      <Typography sx={{ color: playfulPalette.ink, fontSize: "0.82rem", fontWeight: 800 }}>
+                                        {Math.round(masteryScore)}%
+                                      </Typography>
+                                    </Stack>
+                                    <LinearProgress
+                                      variant="determinate"
+                                      value={Math.max(0, Math.min(100, masteryScore))}
+                                      sx={{
+                                        height: 8,
+                                        borderRadius: 99,
+                                        bgcolor: "#F3F6FA",
+                                        "& .MuiLinearProgress-bar": {
+                                          borderRadius: 99,
+                                          background: accent.gradient,
+                                        },
+                                      }}
+                                    />
+                                  </Box>
+                                </Box>
                               </Box>
-                            )}
-                          </Box>
+                            </CardContent>
+                          </MotionCard>
                         </Tooltip>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </CardContent>
+            </MotionCard>
+          ))}
+        </Stack>
 
-                        <Box sx={{
-                          position: 'absolute', top: '50%', left: xOffset >= 0 ? '-140px' : '110px',
-                          transform: 'translateY(-50%)',
-                          bgcolor: 'rgba(255,255,255,0.95)', px: 2, py: 1, borderRadius: 4,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)', minWidth: 120, textAlign: 'center', pointerEvents: 'none'
-                        }}>
-                          <Typography sx={{ fontWeight: 900, fontSize: '0.9rem', color: isUnlocked ? '#333' : '#9E9E9E' }}>
-                            {lesson.titleAr}
-                          </Typography>
-                        </Box>
-
-                      </motion.div>
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Box>
-          );
-        })}
+        <Box sx={{ mt: 3, display: "flex", justifyContent: "center" }}>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => navigate("/practice")}
+            sx={{
+              borderRadius: 999,
+              px: 3,
+              py: 1.3,
+              fontWeight: 900,
+              color: playfulPalette.ink,
+              background: playfulPalette.actionGradient,
+              boxShadow: "0 18px 28px rgba(255,190,120,0.24)",
+            }}
+          >
+            Continue practice
+          </Button>
+        </Box>
       </Box>
     </Box>
   );

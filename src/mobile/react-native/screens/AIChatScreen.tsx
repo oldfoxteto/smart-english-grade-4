@@ -15,6 +15,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
 
 const { width } = Dimensions.get('window');
+const MOBILE_PREVIEW_MESSAGE = 'Mobile preview only. Live AI integration will be enabled after the web platform is finalized.';
 
 interface Message {
   id: string;
@@ -50,7 +51,7 @@ const AIChatScreen: React.FC = () => {
     // Add welcome message
     const welcomeMessage: Message = {
       id: '1',
-      text: "Hello! I'm your AI English Teacher! 👋\n\nI'm here to help you learn English. What would you like to practice today?",
+      text: `Hello! I'm your AI English Teacher! 👋\n\n${MOBILE_PREVIEW_MESSAGE}\n\nWhat would you like to practice today?`,
       sender: 'ai',
       timestamp: new Date(),
     };
@@ -253,6 +254,11 @@ const AIChatScreen: React.FC = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <View style={styles.previewBanner}>
+        <Icon name="info-outline" size={18} color="#7A4B00" />
+        <Text style={styles.previewBannerText}>{MOBILE_PREVIEW_MESSAGE}</Text>
+      </View>
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -333,6 +339,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAF5',
+  },
+  previewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFF3CD',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2D58B',
+  },
+  previewBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#7A4B00',
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',

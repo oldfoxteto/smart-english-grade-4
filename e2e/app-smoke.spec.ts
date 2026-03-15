@@ -105,6 +105,6 @@ test('Lessons map renders with server-driven unlock state', async ({ page }) => 
   await mockApi(page);
 
   await page.goto('/lessons');
-  await expect(page.getByText('World Map')).toBeVisible();
-  await expect(page.getByText('Unit 1')).toBeVisible();
+  await expect(page.getByText('Learning path')).toBeVisible();
+  await expect(page.getByText('Unit 1', { exact: true })).toBeVisible();
 });

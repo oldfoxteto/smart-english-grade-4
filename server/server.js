@@ -107,6 +107,32 @@ db.serialize(() => {
     content TEXT NOT NULL,
     createdAt TEXT
   )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS user_settings (
+    userId TEXT PRIMARY KEY,
+    settingsJson TEXT NOT NULL,
+    updatedAt TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS practice_progress (
+    userId TEXT NOT NULL,
+    exerciseId TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    score INTEGER DEFAULT 0,
+    bestScore INTEGER DEFAULT 0,
+    updatedAt TEXT,
+    PRIMARY KEY (userId, exerciseId)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS reading_quest_progress (
+    userId TEXT NOT NULL,
+    questId TEXT NOT NULL,
+    completed INTEGER DEFAULT 0,
+    bestScore INTEGER DEFAULT 0,
+    completedAt TEXT,
+    PRIMARY KEY (userId, questId)
+  )`);
 });
 
 // Helpers
@@ -148,6 +174,11 @@ const aiRuntimeStatus = () => {
   }
   return { configured: true, mode: 'openai' };
 };
+const voiceRuntimeStatus = () => ({
+  configured: Boolean(OPENAI_API_KEY),
+  mode: OPENAI_API_KEY ? 'openai-realtime-proxy' : 'mock-transcript',
+  maxFramesPerMinute: MAX_FRAMES_PER_MIN,
+});
 const tutorFallbackReply = (hasImage) => (
   hasImage
     ? 'Vision mode is temporarily unavailable. Please continue with text chat.'
@@ -165,6 +196,187 @@ const safetyPolicy = {
     'Vision is disabled by default and requires guardian name + consent.',
   ],
 };
+
+const DEFAULT_USER_SETTINGS = {
+  notifications: {
+    email: true,
+    push: true,
+    sound: true,
+    vibration: true,
+    desktop: true,
+  },
+  audio: {
+    microphone: true,
+    speaker: true,
+    volume: 75,
+    inputDevice: 'default',
+    outputDevice: 'default',
+  },
+  video: {
+    camera: true,
+    quality: 'medium',
+    device: 'default',
+  },
+  appearance: {
+    theme: 'light',
+    language: 'ar',
+    fontSize: 'medium',
+    compactMode: false,
+  },
+  privacy: {
+    profileVisibility: 'public',
+    showProgress: true,
+    showAchievements: true,
+    dataCollection: true,
+  },
+  performance: {
+    autoPlay: true,
+    preloadContent: true,
+    reduceAnimations: false,
+    offlineMode: false,
+  },
+};
+
+const PRACTICE_EXERCISES = [
+  {
+    id: 'practice-pronunciation-1',
+    title: 'Pronunciation Practice',
+    arabicTitle: 'تدريب النطق',
+    description: 'Practice English pronunciation with AI feedback',
+    arabicDescription: 'تدرّب على النطق الإنجليزي مع ملاحظات ذكية تساعدك على التحسن.',
+    type: 'pronunciation',
+    difficulty: 'intermediate',
+    duration: 15,
+    category: 'Speaking',
+  },
+  {
+    id: 'practice-listening-1',
+    title: 'Listening Comprehension',
+    arabicTitle: 'فهم الاستماع',
+    description: 'Test your listening skills with audio exercises',
+    arabicDescription: 'اختبر مهارة الاستماع عبر مقاطع صوتية قصيرة وأسئلة ممتعة.',
+    type: 'listening',
+    difficulty: 'beginner',
+    duration: 20,
+    category: 'Listening',
+  },
+  {
+    id: 'practice-speaking-1',
+    title: 'Speaking Practice',
+    arabicTitle: 'تدريب المحادثة',
+    description: 'Practice speaking with conversation scenarios',
+    arabicDescription: 'تحدّث في مواقف يومية قصيرة لتقوية الثقة والطلاقة.',
+    type: 'speaking',
+    difficulty: 'advanced',
+    duration: 25,
+    category: 'Speaking',
+  },
+  {
+    id: 'practice-grammar-1',
+    title: 'Grammar Exercises',
+    arabicTitle: 'تمارين القواعد',
+    description: 'Improve grammar with interactive exercises',
+    arabicDescription: 'تعلم القواعد من خلال تدريبات بسيطة وتغذية راجعة سريعة.',
+    type: 'grammar',
+    difficulty: 'intermediate',
+    duration: 30,
+    category: 'Grammar',
+  },
+  {
+    id: 'practice-vocabulary-1',
+    title: 'Vocabulary Builder',
+    arabicTitle: 'مفردات جديدة',
+    description: 'Expand your vocabulary with word games',
+    arabicDescription: 'زد حصيلتك اللغوية بألعاب كلمات وأمثلة سهلة الحفظ.',
+    type: 'vocabulary',
+    difficulty: 'beginner',
+    duration: 18,
+    category: 'Vocabulary',
+  },
+];
+
+const READING_QUESTS = [
+  {
+    id: 'quest-1',
+    title: 'The Magic Forest',
+    titleAr: 'الغابة السحرية',
+    image: '🌲',
+    paragraphs: [
+      {
+        text: 'Once upon a time, there was a small boy named Ali. He lived near a big, dark forest. Everyone said the forest was magic. Ali wanted to see the magic.',
+        dictionary: {
+          Once: 'في قديم الزمان',
+          time: 'وقت',
+          small: 'صغير',
+          boy: 'ولد',
+          named: 'اسمه',
+          lived: 'عاش',
+          near: 'بالقرب من',
+          big: 'كبير',
+          dark: 'مظلم',
+          forest: 'غابة',
+          Everyone: 'الجميع',
+          said: 'قال',
+          magic: 'سحر',
+          wanted: 'أراد',
+          see: 'يرى',
+        },
+        quiz: {
+          question: 'Where did Ali live?',
+          options: ['Near a big forest', 'In a city', 'On a mountain', 'Under the sea'],
+          correctIndex: 0,
+        },
+      },
+      {
+        text: 'One day, Ali walked into the forest. He saw a blue bird. The bird talked to him! Hello, Ali, said the bird. Ali was very surprised.',
+        dictionary: {
+          One: 'واحد',
+          day: 'يوم',
+          walked: 'مشى',
+          into: 'إلى داخل',
+          saw: 'رأى',
+          blue: 'أزرق',
+          bird: 'طائر',
+          talked: 'تحدث',
+          Hello: 'مرحبًا',
+          very: 'جدًا',
+          surprised: 'متفاجئ',
+        },
+        quiz: {
+          question: 'What color was the bird?',
+          options: ['Red', 'Blue', 'Yellow', 'Green'],
+          correctIndex: 1,
+        },
+      },
+    ],
+  },
+];
+
+function mergeSettings(user, progressRow, savedSettings) {
+  const parsed = savedSettings ? parseJSON(savedSettings, {}) : {};
+  return {
+    profile: {
+      name: user?.displayName || 'Learner',
+      email: user?.email || '',
+      avatar: '/avatars/user.jpg',
+      level: progressRow?.level || 1,
+      xp: (progressRow?.stars || 0) * 10,
+      language: parsed?.profile?.language || parsed?.appearance?.language || DEFAULT_USER_SETTINGS.appearance.language,
+    },
+    notifications: { ...DEFAULT_USER_SETTINGS.notifications, ...(parsed.notifications || {}) },
+    audio: { ...DEFAULT_USER_SETTINGS.audio, ...(parsed.audio || {}) },
+    video: { ...DEFAULT_USER_SETTINGS.video, ...(parsed.video || {}) },
+    appearance: { ...DEFAULT_USER_SETTINGS.appearance, ...(parsed.appearance || {}) },
+    privacy: { ...DEFAULT_USER_SETTINGS.privacy, ...(parsed.privacy || {}) },
+    performance: { ...DEFAULT_USER_SETTINGS.performance, ...(parsed.performance || {}) },
+  };
+}
+
+function deriveLeagueFromXp(xp) {
+  if (xp >= 6000) return 'Gold';
+  if (xp >= 3000) return 'Silver';
+  return 'Bronze';
+}
 
 function dbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -734,6 +946,255 @@ app.put('/api/v1/progress', authMiddleware, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Settings / practice / leaderboard / reading quests
+// ---------------------------------------------------------------------------
+app.get('/api/v1/settings', authMiddleware, async (req, res) => {
+  try {
+    const [user, progressRow, savedSettings] = await Promise.all([
+      dbGet(`SELECT id, email, displayName FROM users WHERE id = ?`, [req.userId]),
+      dbGet(`SELECT stars, level FROM progress WHERE userId = ?`, [req.userId]),
+      dbGet(`SELECT settingsJson FROM user_settings WHERE userId = ?`, [req.userId]),
+    ]);
+
+    res.json({
+      settings: mergeSettings(user, progressRow, savedSettings?.settingsJson),
+      updatedAt: savedSettings?.updatedAt || null,
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.put('/api/v1/settings', authMiddleware, async (req, res) => {
+  const incoming = req.body?.settings || req.body || {};
+  const nextName = String(incoming?.profile?.name || '').trim() || 'Learner';
+  const nextEmail = String(incoming?.profile?.email || '').trim().toLowerCase();
+
+  try {
+    const currentUser = await dbGet(`SELECT id, email FROM users WHERE id = ?`, [req.userId]);
+    if (!currentUser) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+
+    if (nextEmail && nextEmail !== currentUser.email) {
+      const existing = await dbGet(`SELECT id FROM users WHERE email = ? AND id != ?`, [nextEmail, req.userId]);
+      if (existing) return res.status(409).json({ error: 'EMAIL_EXISTS' });
+    }
+
+    await dbRun(`UPDATE users SET displayName = ?, email = ? WHERE id = ?`, [
+      nextName,
+      nextEmail || currentUser.email,
+      req.userId,
+    ]);
+
+    const progressRow = await dbGet(`SELECT stars, level FROM progress WHERE userId = ?`, [req.userId]);
+    const merged = mergeSettings(
+      { id: req.userId, email: nextEmail || currentUser.email, displayName: nextName },
+      progressRow,
+      JSON.stringify(incoming),
+    );
+
+    const updatedAt = nowIso();
+    await dbRun(
+      `INSERT INTO user_settings (userId, settingsJson, updatedAt)
+       VALUES (?, ?, ?)
+       ON CONFLICT(userId) DO UPDATE SET
+         settingsJson = excluded.settingsJson,
+         updatedAt = excluded.updatedAt`,
+      [req.userId, JSON.stringify(merged), updatedAt]
+    );
+
+    res.json({ ok: true, settings: merged, updatedAt });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/practice/catalog', authMiddleware, async (req, res) => {
+  try {
+    const rows = await dbAll(`SELECT * FROM practice_progress WHERE userId = ?`, [req.userId]);
+    const progressMap = new Map(rows.map((row) => [row.exerciseId, row]));
+    const exercises = PRACTICE_EXERCISES.map((exercise) => {
+      const row = progressMap.get(exercise.id);
+      return {
+        ...exercise,
+        completed: Boolean(row?.completed),
+        score: row?.score || 0,
+        bestScore: row?.bestScore || 0,
+        attempts: row?.attempts || 0,
+      };
+    });
+    res.json({ exercises, updatedAt: nowIso() });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.post('/api/v1/practice/exercises/:exerciseId/complete', authMiddleware, async (req, res) => {
+  const exerciseId = String(req.params.exerciseId);
+  const score = Math.max(0, Math.min(100, Number(req.body?.score || 0)));
+  const completed = req.body?.completed ? 1 : 0;
+  const exercise = PRACTICE_EXERCISES.find((item) => item.id === exerciseId);
+  if (!exercise) return res.status(404).json({ error: 'EXERCISE_NOT_FOUND' });
+
+  try {
+    const current = await dbGet(
+      `SELECT attempts, bestScore FROM practice_progress WHERE userId = ? AND exerciseId = ?`,
+      [req.userId, exerciseId]
+    );
+    const attempts = Number(current?.attempts || 0) + 1;
+    const bestScore = Math.max(Number(current?.bestScore || 0), score);
+    const updatedAt = nowIso();
+
+    await dbRun(
+      `INSERT INTO practice_progress (userId, exerciseId, attempts, completed, score, bestScore, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, exerciseId) DO UPDATE SET
+         attempts = excluded.attempts,
+         completed = excluded.completed,
+         score = excluded.score,
+         bestScore = excluded.bestScore,
+         updatedAt = excluded.updatedAt`,
+      [req.userId, exerciseId, attempts, completed, score, bestScore, updatedAt]
+    );
+
+    res.json({
+      ok: true,
+      exercise: {
+        ...exercise,
+        completed: Boolean(completed),
+        score,
+        bestScore,
+        attempts,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/leaderboard', authMiddleware, async (req, res) => {
+  const requestedLeague = String(req.query.league || '').trim();
+  try {
+    const [rows, currentUser] = await Promise.all([
+      dbAll(
+        `SELECT users.id, users.displayName, users.email, COALESCE(progress.stars, 0) AS stars
+         FROM users
+         LEFT JOIN progress ON progress.userId = users.id`
+      ),
+      dbGet(
+        `SELECT users.id, users.displayName, users.email, COALESCE(progress.stars, 0) AS stars
+         FROM users
+         LEFT JOIN progress ON progress.userId = users.id
+         WHERE users.id = ?`,
+        [req.userId]
+      ),
+    ]);
+
+    const mapped = rows.map((row) => {
+      const xp = Number(row.stars || 0) * 10;
+      return {
+        id: row.id,
+        name: row.displayName || row.email || 'Learner',
+        xp,
+        streak: Math.max(1, Math.floor(xp / 500) + 1),
+        league: deriveLeagueFromXp(xp),
+        isCurrentUser: row.id === req.userId,
+      };
+    });
+
+    const effectiveLeague = requestedLeague || deriveLeagueFromXp(Number(currentUser?.stars || 0) * 10);
+    let entries = mapped.filter((entry) => entry.league === effectiveLeague);
+    if (entries.length === 0 && mapped.length > 0) {
+      entries = mapped;
+    }
+
+    entries = entries
+      .sort((a, b) => b.xp - a.xp)
+      .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+    const currentEntry = entries.find((entry) => entry.isCurrentUser)
+      || mapped.find((entry) => entry.isCurrentUser)
+      || null;
+
+    res.json({
+      league: effectiveLeague,
+      entries,
+      currentUser: currentEntry,
+      generatedAt: nowIso(),
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/reading-quests', authMiddleware, async (req, res) => {
+  try {
+    const rows = await dbAll(`SELECT * FROM reading_quest_progress WHERE userId = ?`, [req.userId]);
+    const progressMap = new Map(rows.map((row) => [row.questId, row]));
+    const quests = READING_QUESTS.map((quest) => ({
+      id: quest.id,
+      title: quest.title,
+      titleAr: quest.titleAr,
+      image: quest.image,
+      paragraphCount: quest.paragraphs.length,
+      completed: Boolean(progressMap.get(quest.id)?.completed),
+      bestScore: Number(progressMap.get(quest.id)?.bestScore || 0),
+    }));
+    res.json({ quests });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.get('/api/v1/reading-quests/:questId', authMiddleware, async (req, res) => {
+  const questId = String(req.params.questId);
+  const quest = READING_QUESTS.find((item) => item.id === questId);
+  if (!quest) return res.status(404).json({ error: 'QUEST_NOT_FOUND' });
+
+  try {
+    const row = await dbGet(
+      `SELECT completed, bestScore, completedAt FROM reading_quest_progress WHERE userId = ? AND questId = ?`,
+      [req.userId, questId]
+    );
+    res.json({
+      quest,
+      progress: {
+        completed: Boolean(row?.completed),
+        bestScore: Number(row?.bestScore || 0),
+        completedAt: row?.completedAt || null,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.post('/api/v1/reading-quests/:questId/complete', authMiddleware, async (req, res) => {
+  const questId = String(req.params.questId);
+  const quest = READING_QUESTS.find((item) => item.id === questId);
+  if (!quest) return res.status(404).json({ error: 'QUEST_NOT_FOUND' });
+  const bestScore = Math.max(0, Math.min(100, Number(req.body?.bestScore || 100)));
+  const completedAt = nowIso();
+
+  try {
+    await dbRun(
+      `INSERT INTO reading_quest_progress (userId, questId, completed, bestScore, completedAt)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(userId, questId) DO UPDATE SET
+         completed = excluded.completed,
+         bestScore = CASE
+           WHEN reading_quest_progress.bestScore > excluded.bestScore THEN reading_quest_progress.bestScore
+           ELSE excluded.bestScore
+         END,
+         completedAt = excluded.completedAt`,
+      [req.userId, questId, 1, bestScore, completedAt]
+    );
+    res.json({ ok: true, completedAt, bestScore });
+  } catch {
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Gamification (simple derived XP/streaks)
 // ---------------------------------------------------------------------------
 app.get('/api/v1/gamification/status', authMiddleware, (req, res) => {
@@ -1162,7 +1623,7 @@ app.post('/api/v1/srs/review', authMiddleware, (req, res) => {
 // Health
 // ---------------------------------------------------------------------------
 app.get('/api/v1/health', (_req, res) => {
-  res.json({ status: 'healthy', ts: nowIso(), version: 'v1', ai: aiRuntimeStatus() });
+  res.json({ status: 'healthy', ts: nowIso(), version: 'v1', ai: aiRuntimeStatus(), voice: voiceRuntimeStatus() });
 });
 
 // ---------------------------------------------------------------------------
@@ -1187,6 +1648,7 @@ io.on('connection', (socket) => {
   socket.on('voice:join', (roomId) => {
     const safeRoom = roomId || `room-${socket.userId || 'anon'}`;
     socket.join(safeRoom);
+    socket.emit('voice:status', voiceRuntimeStatus());
     socket.to(safeRoom).emit('voice:peer-joined', { peerId: socket.id, userId: socket.userId });
   });
 

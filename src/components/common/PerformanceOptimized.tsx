@@ -4,17 +4,17 @@ import { Box, CircularProgress, Typography, Paper, LinearProgress } from '@mui/m
 import { Routes, Route, Navigate } from 'react-router-dom';
 
 // Lazy loaded components with code splitting
-const LessonsPage = lazy(() => import('../pages/LessonsPageFixed').then(module => ({
+const LessonsPage = lazy(() => import('../pages/LessonsPage').then(module => ({
   default: module.default
 })));
-const PracticePage = lazy(() => import('../pages/ProfessionalPracticePage').then(module => ({
-  default: module.default
+const PracticePage = lazy(() => import('../pages/PracticePage').then(module => ({
+  default: module.PracticePage
 })));
 const TestingPage = lazy(() => import('../pages/ProfessionalTestingPage').then(module => ({
   default: module.default
 })));
-const SettingsPage = lazy(() => import('../pages/ProfessionalSettingsPage').then(module => ({
-  default: module.default
+const SettingsPage = lazy(() => import('../pages/SettingsPage').then(module => ({
+  default: module.SettingsPage
 })));
 const AdvancedLearningHub = lazy(() => import('../pages/AdvancedLearningHub').then(module => ({
   default: module.default
@@ -142,8 +142,10 @@ export const OptimizedRouter: React.FC = () => {
   React.useEffect(() => {
     // Preload frequently accessed components
     const timer = setTimeout(() => {
-      preloadComponent(() => import('../pages/LessonsPageFixed'));
-      preloadComponent(() => import('../pages/ProfessionalPracticePage'));
+      preloadComponent(() => import('../pages/LessonsPage'));
+      preloadComponent(() => import('../pages/PracticePage').then(module => ({
+        default: module.PracticePage
+      })));
     }, 2000);
     
     return () => clearTimeout(timer);
