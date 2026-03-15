@@ -6,10 +6,23 @@
 تشغيل `backend/` محليًا بشكل واضح وقابل للتكرار، مع توضيح سبب بقاء بعض الاختبارات `skipped` عندما لا تكون البيئة جاهزة.
 
 ## الوضع الحالي
-- اختبارات `backend npm test` تعمل جزئيًا: `6 passed / 8 skipped`
-- سبب التخطي ليس خطأ بالكود
-- السبب الحالي هو غياب PostgreSQL المحلي الجاهز وقت التشغيل
-- في هذه البيئة تحديدًا كان `Docker daemon` غير شغال، ولا يوجد `psql` أو خدمة PostgreSQL محلية
+- تم التحقق من تشغيل PostgreSQL محليًا عبر Docker Compose
+- نجحت أوامر:
+  - `npm run db:migrate`
+  - `npm run db:seed`
+  - `npm test`
+  - `npm run test:e2e`
+  - `npm run test:security`
+- لم تعد اختبارات `backend` متخطاة عندما تكون البيئة جاهزة
+
+## نتيجة التحقق الأخيرة
+- `backend npm test`: `14 passed / 0 skipped`
+- `backend npm run test:e2e`: ناجح
+- `backend npm run test:security`: ناجح
+
+مهم:
+- ما زال هذا النجاح مشروطًا بوجود Docker Desktop شغال أو PostgreSQL محلي بديل
+- إذا توقف Docker daemon ستعود المشكلة كعائق بيئي، لا كعطل في المشروع
 
 ## أسرع مسار تشغيل
 1. شغّل Docker Desktop وتأكد أن المحرك يعمل فعليًا.

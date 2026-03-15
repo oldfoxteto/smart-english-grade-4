@@ -191,10 +191,13 @@
 - عالية
 
 الحالة:
-- `pending`
+- `completed`
 
 تحديث التنفيذ:
 - تم عزل الموبايل كمسار `Phase 2 / preview` داخل [AIChatScreen.tsx](D:/sara/smart-english-grade-4/src/mobile/react-native/screens/AIChatScreen.tsx) و [LessonDetailScreen.tsx](D:/sara/smart-english-grade-4/src/mobile/react-native/screens/LessonDetailScreen.tsx)
+- تم تشغيل PostgreSQL محليًا عبر Docker Compose
+- نجحت أوامر `npm run db:migrate` و `npm run db:seed`
+- نجحت اختبارات `backend npm test` و `backend npm run test:e2e` و `backend npm run test:security` بدون `skipped`
 
 ### 6. realtime voice في الباكند الحالي ما زال placeholder جزئيًا
 الحالة الحالية:
@@ -352,5 +355,5 @@
 - [x] عزل مسار الموبايل كمرحلة لاحقة بوضوح
 - [ ] بناء جدول ربط لكل صفحة مع مصدر بياناتها الحالي والمستهدف
 - [ ] تنظيف النسخ القديمة غير المستخدمة
-- [ ] تجهيز `backend/` محليًا بالكامل أو تجميده رسميًا
+- [x] تجهيز `backend/` محليًا بالكامل أو تجميده رسميًا
 - [ ] نقل الصوت من placeholder إلى خدمة مستقرة
