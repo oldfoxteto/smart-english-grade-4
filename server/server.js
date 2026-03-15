@@ -176,7 +176,7 @@ const corsOriginMatcher = (origin, callback) => {
     callback(null, true);
     return;
   }
-  callback(new Error('CORS_NOT_ALLOWED'));
+  callback(null, false);
 };
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const sanitizeDisplayName = (value) => String(value || 'Learner').trim().replace(/\s+/g, ' ').slice(0, 60) || 'Learner';
@@ -206,6 +206,14 @@ const parseCookies = (headerValue) => String(headerValue || '')
 const getCookieValue = (cookieHeader, name) => parseCookies(cookieHeader)[name] || null;
 const refreshTokenTtlMs = parseDurationMs(REFRESH_TOKEN_TTL, 7 * 24 * 60 * 60 * 1000);
 const accessTokenTtlMs = parseDurationMs(ACCESS_TOKEN_TTL, 15 * 60 * 1000);
+const isAllowedOrigin = (originValue) => {
+  if (!originValue) return true;
+  try {
+    return allowedOriginSet.has(new URL(originValue).origin);
+  } catch {
+    return false;
+  }
+};
 
 function buildCookieOptions(maxAgeMs, extra = {}) {
   return {
@@ -231,6 +239,31 @@ function clearAuthCookies(res) {
   delete refreshOptions.maxAge;
   res.clearCookie(ACCESS_COOKIE_NAME, accessOptions);
   res.clearCookie(REFRESH_COOKIE_NAME, refreshOptions);
+}
+
+function requireTrustedOrigin(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+
+  const origin = String(req.headers.origin || '').trim();
+  const referer = String(req.headers.referer || '').trim();
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+
+  if (origin && !isAllowedOrigin(origin)) {
+    return res.status(403).json({ error: 'UNTRUSTED_ORIGIN' });
+  }
+
+  if (!origin && referer && !isAllowedOrigin(referer)) {
+    return res.status(403).json({ error: 'UNTRUSTED_ORIGIN' });
+  }
+
+  if (!origin && !referer && secFetchSite === 'cross-site') {
+    return res.status(403).json({ error: 'UNTRUSTED_ORIGIN' });
+  }
+
+  next();
 }
 const classifyAiError = (error) => {
   const status = Number(error?.status || 0);
@@ -843,11 +876,35 @@ const io = new Server(server, {
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  referrerPolicy: { policy: 'no-referrer' },
+  hsts: IS_PRODUCTION ? {
+    maxAge: 15552000,
+    includeSubDomains: true,
+    preload: true,
+  } : false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+      connectSrc: ["'self'", ...CLIENT_URLS],
+      mediaSrc: ["'self'", 'blob:'],
+      workerSrc: ["'self'", 'blob:'],
+    },
+  },
 }));
 app.use(compression());
 app.use(cors({ origin: corsOriginMatcher, credentials: true }));
 app.use(morgan('combined'));
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use('/api/v1/', requireTrustedOrigin);
 
 // Request-level metrics for ops dashboard
 app.use((req, res, next) => {

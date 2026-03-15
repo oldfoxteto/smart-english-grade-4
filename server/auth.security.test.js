@@ -60,6 +60,19 @@ test('rejects weak passwords on registration', async () => {
   expect(response.body.error).toBe('WEAK_PASSWORD');
 });
 
+test('blocks untrusted origins on state-changing requests', async () => {
+  const response = await request(app)
+    .post('/api/v1/auth/login')
+    .set('Origin', 'https://evil.example.com')
+    .send({
+      email: uniqueEmail('origin'),
+      password: 'Password123',
+    });
+
+  expect(response.status).toBe(403);
+  expect(response.body.error).toBe('UNTRUSTED_ORIGIN');
+});
+
 test('rotates refresh cookies and blocks reuse of the old cookie', async () => {
   const { agent, response } = await registerUser('rotate');
   expect(response.status).toBe(201);
@@ -125,4 +138,13 @@ test('session endpoint restores user from access cookie without exposing tokens'
   expect(sessionResponse.status).toBe(200);
   expect(sessionResponse.body.user.email).toMatch(/@example\.com$/);
   expect(sessionResponse.body.token).toBeUndefined();
+});
+
+test('security headers are present on API responses', async () => {
+  const response = await request(app).get('/api/v1/safety/policy');
+
+  expect(response.headers['x-frame-options']).toBeDefined();
+  expect(response.headers['x-content-type-options']).toBe('nosniff');
+  expect(response.headers['referrer-policy']).toBe('no-referrer');
+  expect(response.headers['content-security-policy']).toContain("default-src 'self'");
 });
