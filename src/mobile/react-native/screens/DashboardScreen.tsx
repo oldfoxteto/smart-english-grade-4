@@ -12,6 +12,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
 import { FirestoreService, AuthService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const { width } = Dimensions.get('window');
 
@@ -294,6 +295,7 @@ const DashboardScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <MobilePreviewBanner />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={

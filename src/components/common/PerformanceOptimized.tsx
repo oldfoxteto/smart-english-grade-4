@@ -10,8 +10,8 @@ const LessonsPage = lazy(() => import('../pages/LessonsPage').then(module => ({
 const PracticePage = lazy(() => import('../pages/PracticePage').then(module => ({
   default: module.PracticePage
 })));
-const TestingPage = lazy(() => import('../pages/ProfessionalTestingPage').then(module => ({
-  default: module.default
+const TestingPage = lazy(() => import('../pages/TestingPage').then(module => ({
+  default: module.TestingPage
 })));
 const SettingsPage = lazy(() => import('../pages/SettingsPage').then(module => ({
   default: module.SettingsPage

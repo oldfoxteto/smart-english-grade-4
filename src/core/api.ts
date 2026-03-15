@@ -397,6 +397,50 @@ export interface ReadingQuestDetailResponse {
   };
 }
 
+export interface TestingCatalogItem {
+  id: string;
+  title: string;
+  arabicTitle: string;
+  description: string;
+  arabicDescription: string;
+  type: 'placement' | 'progress' | 'final' | 'practice';
+  category: 'grammar' | 'vocabulary' | 'listening' | 'reading' | 'speaking' | 'pronunciation';
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  duration: number;
+  questions: number;
+  completed: boolean;
+  score: number;
+  bestScore: number;
+  attempts: number;
+  passingScore: number;
+  status: 'available' | 'locked' | 'completed' | 'in_progress';
+  iconKey: 'assessment' | 'pronunciation' | 'listening' | 'speaking' | 'grammar' | 'vocabulary' | 'reading';
+}
+
+export interface TestingResultItem {
+  id: string;
+  testId: string;
+  score: number;
+  totalQuestions: number;
+  correctAnswers: number;
+  timeSpentMinutes: number;
+  completedAt: string | null;
+  feedback: string;
+  recommendations: string[];
+}
+
+export interface TestingCatalogResponse {
+  tests: TestingCatalogItem[];
+  results: TestingResultItem[];
+  summary: {
+    totalTests: number;
+    completedTests: number;
+    averageScore: number;
+    totalTimeMinutes: number;
+  };
+  generatedAt: string;
+}
+
 // Progress & SRS (server-backed)
 export interface RemoteProgress {
   vocabularyCompleted: number[];
@@ -815,4 +859,8 @@ export async function completeReadingQuest(questId: string, bestScore = 100) {
     method: 'POST',
     body: JSON.stringify({ bestScore }),
   });
+}
+
+export async function getTestingCatalog() {
+  return apiRequest<TestingCatalogResponse>('/testing/catalog');
 }

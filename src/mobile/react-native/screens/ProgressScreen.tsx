@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { FirestoreService, AuthService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const { width } = Dimensions.get('window');
 
@@ -286,6 +287,7 @@ const ProgressScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <MobilePreviewBanner />
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Progress</Text>

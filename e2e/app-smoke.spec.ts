@@ -103,6 +103,56 @@ async function mockApi(page: Page) {
       body: JSON.stringify({ statuses }),
     });
   });
+
+  await page.route(/\/api\/v1\/testing\/catalog$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        tests: [
+          {
+            id: 'placement-en-v1',
+            title: 'English Placement Test',
+            arabicTitle: 'اختبار تحديد المستوى',
+            description: 'Find the learner starting point.',
+            arabicDescription: 'يحدد نقطة البداية المناسبة للمتعلم.',
+            type: 'placement',
+            category: 'grammar',
+            difficulty: 'intermediate',
+            duration: 12,
+            questions: 5,
+            completed: true,
+            score: 80,
+            bestScore: 80,
+            attempts: 1,
+            passingScore: 60,
+            status: 'completed',
+            iconKey: 'assessment',
+          },
+        ],
+        results: [
+          {
+            id: 'result-placement-en-v1',
+            testId: 'placement-en-v1',
+            score: 80,
+            totalQuestions: 5,
+            correctAnswers: 4,
+            timeSpentMinutes: 12,
+            completedAt: new Date().toISOString(),
+            feedback: 'Estimated level: A2. Good progress.',
+            recommendations: ['Repeat one similar task tomorrow.'],
+          },
+        ],
+        summary: {
+          totalTests: 1,
+          completedTests: 1,
+          averageScore: 80,
+          totalTimeMinutes: 12,
+        },
+        generatedAt: new Date().toISOString(),
+      }),
+    });
+  });
 }
 
 test('AI tutor page sends message via backend proxy', async ({ page }) => {
@@ -125,4 +175,13 @@ test('Lessons map renders with server-driven unlock state', async ({ page }) => 
   await page.goto('/lessons');
   await expect(page.getByText('Learning path')).toBeVisible();
   await expect(page.getByText('Unit 1', { exact: true })).toBeVisible();
+});
+
+test('Testing page renders live assessment summary', async ({ page }) => {
+  await bootstrapAuthenticatedUser(page);
+  await mockApi(page);
+
+  await page.goto('/testing');
+  await expect(page.locator('body')).toContainText('Live assessment center');
+  await expect(page.locator('body')).toContainText('اختبار تحديد المستوى');
 });

@@ -1,667 +1,425 @@
-// Testing Page
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
-  Box,
-  Typography,
-  Stack,
   Alert,
-  AlertTitle,
-  Tabs,
-  Tab,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-} from '@mui/material';
+  DialogTitle,
+  Grid,
+  LinearProgress,
+  Stack,
+  Tab,
+  Tabs,
+  Typography,
+} from "@mui/material";
+import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
+import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
+import HeadphonesRoundedIcon from "@mui/icons-material/HeadphonesRounded";
+import RecordVoiceOverRoundedIcon from "@mui/icons-material/RecordVoiceOverRounded";
+import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
+import TimerRoundedIcon from "@mui/icons-material/TimerRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import AnimatedBackground from "../components/AnimatedBackground";
 import {
-  Quiz,
-  Timer,
-  CheckCircle,
-  TrendingUp,
-  PlayArrow,
-  Visibility,
-  Share,
-  Search,
-  Assessment,
-  Speed,
-  Psychology,
-  Book,
-  Headphones,
-  RecordVoiceOver,
-} from '@mui/icons-material';
+  getTestingCatalog,
+  type TestingCatalogItem,
+  type TestingCatalogResponse,
+  type TestingResultItem,
+} from "../core/api";
+import { playfulPalette } from "../theme/playfulPalette";
 
-// Import design system
-import { tokens } from '../design-system/tokens';
-import {
-  AppCard,
-  AppButton,
-  AppProgress,
-  AppAvatar,
-  AppChip,
-  AppGrid,
-} from '../components/ui';
+const MotionCard = motion(Card);
 
-// Types
-interface Test {
-  id: string;
-  title: string;
-  arabicTitle: string;
-  description: string;
-  arabicDescription: string;
-  type: 'placement' | 'progress' | 'final' | 'practice';
-  category: 'grammar' | 'vocabulary' | 'listening' | 'reading' | 'speaking';
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  duration: number;
-  questions: number;
-  completed: boolean;
-  score?: number;
-  bestScore?: number;
-  attempts: number;
-  passingScore: number;
-  status: 'available' | 'locked' | 'completed' | 'in_progress';
-  icon: React.ReactNode;
-}
+const glassCardSx = {
+  borderRadius: 5,
+  border: `1px solid ${playfulPalette.line}`,
+  background: playfulPalette.glass,
+  boxShadow: playfulPalette.glow,
+  backdropFilter: "blur(14px)",
+};
 
-interface TestResult {
-  id: string;
-  testId: string;
-  score: number;
-  totalQuestions: number;
-  correctAnswers: number;
-  timeSpent: number;
-  completedAt: Date;
-  feedback: string;
-  recommendations: string[];
-}
+const tabLabels = ["All", "Placement", "Practice", "Completed"];
 
-// Mock data
-const mockTests: Test[] = [
-  {
-    id: '1',
-    title: 'Placement Test',
-    arabicTitle: 'اختبار التقييم',
-    description: 'Determine your English level',
-    arabicDescription: 'حدد مستواك في اللغة الإنجليزية',
-    type: 'placement',
-    category: 'grammar',
-    difficulty: 'intermediate',
-    duration: 45,
-    questions: 50,
-    completed: true,
-    score: 78,
-    bestScore: 85,
-    attempts: 1,
-    passingScore: 60,
-    status: 'completed',
-    icon: <Assessment />,
-  },
-  {
-    id: '2',
-    title: 'Grammar Test',
-    arabicTitle: 'اختبار القواعد',
-    description: 'Test your grammar knowledge',
-    arabicDescription: 'اختبر معرفتك بالقواعد',
-    type: 'progress',
-    category: 'grammar',
-    difficulty: 'intermediate',
-    duration: 30,
-    questions: 25,
-    completed: false,
-    attempts: 2,
-    passingScore: 70,
-    status: 'available',
-    icon: <Book />,
-  },
-  {
-    id: '3',
-    title: 'Vocabulary Test',
-    arabicTitle: 'اختبار المفردات',
-    description: 'Test your vocabulary skills',
-    arabicDescription: 'اختبر مهاراتك في المفردات',
-    type: 'progress',
-    category: 'vocabulary',
-    difficulty: 'beginner',
-    duration: 20,
-    questions: 20,
-    completed: true,
-    score: 92,
-    bestScore: 95,
-    attempts: 3,
-    passingScore: 75,
-    status: 'completed',
-    icon: <Psychology />,
-  },
-  {
-    id: '4',
-    title: 'Listening Comprehension',
-    arabicTitle: 'اختبار فهم الاستماع',
-    description: 'Test your listening abilities',
-    arabicDescription: 'اختبر قدراتك الاستماع',
-    type: 'progress',
-    category: 'listening',
-    difficulty: 'advanced',
-    duration: 35,
-    questions: 30,
-    completed: false,
-    attempts: 1,
-    passingScore: 65,
-    status: 'available',
-    icon: <Headphones />,
-  },
-  {
-    id: '5',
-    title: 'Speaking Assessment',
-    arabicTitle: 'تقييم التحدث',
-    description: 'Evaluate your speaking skills',
-    arabicDescription: 'قيم مهارات التحدث لديك',
-    type: 'practice',
-    category: 'speaking',
-    difficulty: 'intermediate',
-    duration: 25,
-    questions: 15,
-    completed: false,
-    attempts: 0,
-    passingScore: 70,
-    status: 'locked',
-    icon: <RecordVoiceOver />,
-  },
-];
+const iconMap = {
+  assessment: <AssessmentRoundedIcon />,
+  pronunciation: <RecordVoiceOverRoundedIcon />,
+  listening: <HeadphonesRoundedIcon />,
+  speaking: <RecordVoiceOverRoundedIcon />,
+  grammar: <MenuBookRoundedIcon />,
+  vocabulary: <PsychologyRoundedIcon />,
+  reading: <AutoStoriesRoundedIcon />,
+};
 
-const mockTestResults: TestResult[] = [
-  {
-    id: '1',
-    testId: '1',
-    score: 78,
-    totalQuestions: 50,
-    correctAnswers: 39,
-    timeSpent: 42,
-    completedAt: new Date('2024-01-15T10:30:00'),
-    feedback: 'Good performance! You have intermediate level English skills.',
-    recommendations: [
-      'Focus on advanced grammar topics',
-      'Practice more complex vocabulary',
-      'Improve listening comprehension',
-    ],
-  },
-  {
-    id: '2',
-    testId: '3',
-    score: 92,
-    totalQuestions: 20,
-    correctAnswers: 18,
-    timeSpent: 18,
-    completedAt: new Date('2024-01-20T14:15:00'),
-    feedback: 'Excellent! Your vocabulary is at advanced level.',
-    recommendations: [
-      'Challenge yourself with more difficult words',
-      'Learn idiomatic expressions',
-      'Practice using new vocabulary in context',
-    ],
-  },
-];
+const statusStyles = {
+  completed: { bg: playfulPalette.softMint, color: "#2A8B6C", label: "Completed" },
+  available: { bg: playfulPalette.softBlue, color: playfulPalette.ink, label: "Ready" },
+  locked: { bg: playfulPalette.softPink, color: playfulPalette.coral, label: "Locked" },
+  in_progress: { bg: playfulPalette.softPeach, color: "#A96324", label: "In progress" },
+};
+
+const difficultyStyles = {
+  beginner: { bg: playfulPalette.softMint, color: "#2A8B6C", label: "Beginner" },
+  intermediate: { bg: playfulPalette.softPeach, color: "#A96324", label: "Intermediate" },
+  advanced: { bg: playfulPalette.softPink, color: playfulPalette.coral, label: "Advanced" },
+};
+
+const scoreTrack = (score: number) => {
+  if (score >= 80) return { track: "#DDFBF0", bar: "#38B889" };
+  if (score >= 60) return { track: "#FFF1D8", bar: "#F0A93A" };
+  return { track: "#FFE3EB", bar: "#E66B93" };
+};
+
+const formatMinutes = (value: number) => {
+  if (!value) return "0 min";
+  const hours = Math.floor(value / 60);
+  const mins = value % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+};
 
 export const TestingPage: React.FC = () => {
-  const [tests, setTests] = useState<Test[]>([]);
-  const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [filteredTests, setFilteredTests] = useState<Test[]>([]);
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
-  const [selectedTest, setSelectedTest] = useState<Test | null>(null);
-  const [showResults, setShowResults] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [catalog, setCatalog] = useState<TestingCatalogResponse | null>(null);
+  const [selectedResult, setSelectedResult] = useState<TestingResultItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setTests(mockTests);
-      setTestResults(mockTestResults);
-      setFilteredTests(mockTests);
-      setLoading(false);
-    }, 1000);
+    let active = true;
+    getTestingCatalog()
+      .then((response) => {
+        if (!active) return;
+        setCatalog(response);
+        setError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setError("Could not load the live testing data right now.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  useEffect(() => {
-    let filtered = tests;
-
-    // Filter by search
-    if (searchQuery) {
-      filtered = filtered.filter(test =>
-        test.arabicTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        test.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        test.arabicDescription.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    // Filter by tab
-    switch (activeTab) {
-      case 0: break; // All
-      case 1: // Placement
-        filtered = filtered.filter(test => test.type === 'placement');
-        break;
-      case 2: // Progress
-        filtered = filtered.filter(test => test.type === 'progress');
-        break;
-      case 3: // Practice
-        filtered = filtered.filter(test => test.type === 'practice');
-        break;
-    }
-
-    setFilteredTests(filtered);
-  }, [tests, searchQuery, activeTab]);
-
-  const getTypeColor = (type: string): 'primary' | 'secondary' | 'success' | 'warning' | 'error' => {
-    switch (type) {
-      case 'placement': return 'primary';
-      case 'progress': return 'success';
-      case 'final': return 'error';
-      case 'practice': return 'warning';
-      default: return 'primary';
-    }
+  const results = catalog?.results || [];
+  const summary = catalog?.summary || {
+    totalTests: 0,
+    completedTests: 0,
+    averageScore: 0,
+    totalTimeMinutes: 0,
   };
 
-  const getStatusColor = (status: string): 'success' | 'warning' | 'error' | 'default' => {
-    switch (status) {
-      case 'completed': return 'success';
-      case 'in_progress': return 'warning';
-      case 'locked': return 'error';
-      default: return 'default';
-    }
-  };
+  const filteredTests = useMemo(() => {
+    const tests = catalog?.tests || [];
+    return tests.filter((test) => {
+      if (activeTab === 1) return test.type === "placement";
+      if (activeTab === 2) return test.type === "practice";
+      if (activeTab === 3) return test.completed;
+      return true;
+    });
+  }, [activeTab, catalog?.tests]);
 
-  const getScoreColor = (score: number): 'success' | 'warning' | 'error' => {
-    if (score >= 80) return 'success';
-    if (score >= 60) return 'warning';
-    return 'error';
-  };
+  const statCards = [
+    {
+      label: "Total assessments",
+      value: summary.totalTests,
+      icon: <AssessmentRoundedIcon />,
+      bg: playfulPalette.softBlue,
+      color: playfulPalette.ink,
+    },
+    {
+      label: "Completed",
+      value: summary.completedTests,
+      icon: <CheckCircleRoundedIcon />,
+      bg: playfulPalette.softMint,
+      color: "#2A8B6C",
+    },
+    {
+      label: "Average score",
+      value: `${summary.averageScore}%`,
+      icon: <TrendingUpRoundedIcon />,
+      bg: playfulPalette.softLilac,
+      color: "#5F65C7",
+    },
+    {
+      label: "Time invested",
+      value: formatMinutes(summary.totalTimeMinutes),
+      icon: <TimerRoundedIcon />,
+      bg: playfulPalette.softPeach,
+      color: "#A96324",
+    },
+  ];
 
-  const handleStartTest = (test: Test) => {
-    if (test.status === 'locked') {
-      alert('هذا الاختبار مقفل حالياً');
+  const handleOpenTest = (test: TestingCatalogItem) => {
+    if (test.status === "locked") return;
+    if (test.type === "placement") {
+      navigate("/placement-test");
       return;
     }
-    setSelectedTest(test);
-    console.log('Starting test:', test.id);
+    if (test.category === "reading") {
+      navigate("/reading-quest");
+      return;
+    }
+    if (test.type === "practice") {
+      navigate("/practice");
+      return;
+    }
+    navigate("/lessons");
   };
 
-  const handleViewResults = (result: TestResult) => {
-    setSelectedTest(tests.find(t => t.id === result.testId) || null);
-    setShowResults(true);
-  };
-
-  const formatTime = (minutes: number): string => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  };
-
-  const formatDate = (date: Date): string => {
-    return date.toLocaleDateString('ar', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const tabLabels = [
-    'الكل',
-    'اختبارات التقييم',
-    'اختبارات التقدم',
-    'اختبارات الممارسة',
-  ];
+  const renderResultDialog = () => (
+    <Dialog open={Boolean(selectedResult)} onClose={() => setSelectedResult(null)} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontWeight: 900 }}>Assessment result</DialogTitle>
+      <DialogContent>
+        {selectedResult && (
+          <Stack spacing={2}>
+            <Box>
+              <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.3rem" }}>
+                {selectedResult.score}%
+              </Typography>
+              <Typography sx={{ color: playfulPalette.inkSoft }}>
+                {selectedResult.correctAnswers}/{selectedResult.totalQuestions} correct in{" "}
+                {formatMinutes(selectedResult.timeSpentMinutes)}
+              </Typography>
+            </Box>
+            <Typography sx={{ color: playfulPalette.ink, lineHeight: 1.7 }}>
+              {selectedResult.feedback}
+            </Typography>
+            <Stack spacing={1}>
+              {selectedResult.recommendations.map((item) => (
+                <Chip
+                  key={item}
+                  label={item}
+                  sx={{
+                    justifyContent: "flex-start",
+                    bgcolor: playfulPalette.softBlue,
+                    color: playfulPalette.ink,
+                    fontWeight: 700,
+                  }}
+                />
+              ))}
+            </Stack>
+          </Stack>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <Stack spacing={2} alignItems="center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-          <Typography variant="h6">جاري تحميل الاختبارات...</Typography>
+      <Box sx={{ minHeight: "70vh", display: "grid", placeItems: "center", px: 2 }}>
+        <Stack spacing={2} sx={{ alignItems: "center" }}>
+          <CircularProgress sx={{ color: playfulPalette.coral }} />
+          <Typography sx={{ color: playfulPalette.ink, fontWeight: 800 }}>
+            Loading live testing data...
+          </Typography>
         </Stack>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: tokens.spacing.lg }}>
-      {/* Header */}
-      <Box sx={{ mb: tokens.spacing.xl }}>
-        <Typography variant="h4" sx={{ fontWeight: 900, mb: tokens.spacing.md }}>
-          📝 الاختبارات والتقييم
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          اختبر مهاراتك وتتبع تقدمك في تعلم اللغة الإنجليزية
-        </Typography>
-      </Box>
-
-      {/* Search Bar */}
-      <AppCard sx={{ mb: tokens.spacing.xl }}>
-        <TextField
-          fullWidth
-          placeholder="ابحث عن اختبار..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <Box sx={{ display: 'flex', alignItems: 'center', pr: 1 }}>
-                <Search />
+    <Box sx={{ position: "relative", minHeight: "100vh", pb: 10 }}>
+      <AnimatedBackground />
+      <Box sx={{ position: "relative", zIndex: 1, px: { xs: 0.5, sm: 1.5 }, pt: { xs: 1, md: 2 } }}>
+        <MotionCard initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} sx={{ ...glassCardSx, overflow: "hidden", mb: 3 }}>
+          <CardContent sx={{ p: { xs: 2.2, sm: 3.2 } }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1.1fr 0.9fr" }, gap: 2.4, alignItems: "center" }}>
+              <Box>
+                <Chip
+                  icon={<AssessmentRoundedIcon />}
+                  label="Live assessment center"
+                  sx={{ bgcolor: playfulPalette.lemon, color: playfulPalette.ink, fontWeight: 900, borderRadius: 999, mb: 2 }}
+                />
+                <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: { xs: "1.9rem", md: "2.7rem" }, letterSpacing: "-0.04em", lineHeight: 1.04 }}>
+                  One place to review placement, practice checks, and reading progress with real backend data.
+                </Typography>
+                <Typography sx={{ color: playfulPalette.inkSoft, mt: 1.4, lineHeight: 1.75, maxWidth: 560 }}>
+                  This page now reflects saved test results instead of demo cards, so learners can see what is really completed and what still needs work.
+                </Typography>
               </Box>
-            ),
-          }}
-        />
-      </AppCard>
 
-      {/* Tabs */}
-      <AppCard sx={{ mb: tokens.spacing.xl }}>
-        <Tabs
-          value={activeTab}
-          onChange={(_event, newValue) => setActiveTab(newValue)}
-          variant="scrollable"
-          scrollButtons="auto"
-        >
-          {tabLabels.map((label, index) => (
-            <Tab key={index} label={label} />
+              <Box sx={{ ...glassCardSx, p: 2.2, background: playfulPalette.heroGradient }}>
+                <Typography sx={{ color: "rgba(40,75,99,0.72)", fontSize: "0.9rem", mb: 0.5 }}>Current overview</Typography>
+                <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.42rem" }}>
+                  {summary.completedTests}/{summary.totalTests} finished
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap", gap: 1 }}>
+                  <Chip label={`${summary.averageScore}% average`} sx={{ bgcolor: "rgba(255,255,255,0.56)", color: playfulPalette.ink, fontWeight: 800 }} />
+                  <Chip label={formatMinutes(summary.totalTimeMinutes)} sx={{ bgcolor: "rgba(255,255,255,0.56)", color: playfulPalette.ink, fontWeight: 800 }} />
+                </Stack>
+              </Box>
+            </Box>
+          </CardContent>
+        </MotionCard>
+
+        {error && (
+          <Alert severity="info" sx={{ mb: 3, borderRadius: 3 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", lg: "repeat(4, 1fr)" }, gap: 2.2, mb: 3 }}>
+          {statCards.map((stat, index) => (
+            <MotionCard key={stat.label} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
+              <CardContent sx={{ ...glassCardSx, p: 2, height: "100%", display: "flex", alignItems: "center", gap: 1.4 }}>
+                <Box sx={{ width: 48, height: 48, borderRadius: 3, display: "grid", placeItems: "center", bgcolor: stat.bg, color: stat.color, flexShrink: 0 }}>
+                  {stat.icon}
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.18rem" }}>{stat.value}</Typography>
+                  <Typography sx={{ color: playfulPalette.inkSoft, fontSize: "0.92rem" }}>{stat.label}</Typography>
+                </Box>
+              </CardContent>
+            </MotionCard>
           ))}
-        </Tabs>
-      </AppCard>
+        </Box>
 
-      {/* Stats Cards */}
-      <AppGrid spacing={tokens.spacing.lg} sx={{ mb: tokens.spacing.xl }}>
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="primary" size="lg">
-                <Quiz />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {tests.length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                إجمالي الاختبارات
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="success" size="lg">
-                <CheckCircle />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {tests.filter(t => t.completed).length}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                الاختبارات المكتملة
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="warning" size="lg">
-                <TrendingUp />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {testResults.length > 0 ? Math.round(testResults.reduce((acc, r) => acc + r.score, 0) / testResults.length) : 0}%
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                متوسط الدرجات
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-
-        <AppGrid xs={12} sm={6} md={3}>
-          <AppCard>
-            <Stack spacing={tokens.spacing.md} alignItems="center">
-              <AppAvatar color="secondary" size="lg">
-                <Timer />
-              </AppAvatar>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                {formatTime(testResults.reduce((acc, r) => acc + r.timeSpent, 0))}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                إجمالي وقت الاختبارات
-              </Typography>
-            </Stack>
-          </AppCard>
-        </AppGrid>
-      </AppGrid>
-
-      {/* Tests Grid */}
-      <AppGrid spacing={tokens.spacing.lg}>
-        {filteredTests.map((test) => (
-          <AppGrid xs={12} sm={6} md={4} key={test.id}>
-            <AppCard
-              hoverable
-              onClick={() => handleStartTest(test)}
+        <MotionCard initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} sx={{ ...glassCardSx, mb: 3 }}>
+          <CardContent sx={{ p: { xs: 1, sm: 1.2 } }}>
+            <Tabs
+              value={activeTab}
+              onChange={(_event, value: number) => setActiveTab(value)}
+              variant="scrollable"
+              scrollButtons="auto"
               sx={{
-                opacity: test.status === 'locked' ? 0.6 : 1,
-                cursor: test.status === 'locked' ? 'not-allowed' : 'pointer',
+                "& .MuiTabs-indicator": {
+                  height: 3,
+                  borderRadius: 999,
+                  background: playfulPalette.candyGradient,
+                },
               }}
             >
-              <Stack spacing={tokens.spacing.md}>
-                {/* Header */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <AppAvatar color={getTypeColor(test.type)} size="md">
-                    {test.icon}
-                  </AppAvatar>
-                  <Stack direction="row" spacing={1}>
-                    <AppChip
-                      label={test.type}
-                      color={getTypeColor(test.type)}
-                      size="small"
-                    />
-                    <AppChip
-                      label={test.status}
-                      color={getStatusColor(test.status)}
-                      size="small"
-                    />
-                  </Stack>
-                </Box>
+              {tabLabels.map((label) => (
+                <Tab key={label} label={label} sx={{ fontWeight: 800 }} />
+              ))}
+            </Tabs>
+          </CardContent>
+        </MotionCard>
 
-                {/* Title and Description */}
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: tokens.spacing.xs }}>
-                    {test.arabicTitle}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: tokens.spacing.sm }}>
-                    {test.arabicDescription}
-                  </Typography>
-                </Box>
+        <Grid container spacing={2.2}>
+          {filteredTests.map((test, index) => {
+            const statusStyle = statusStyles[test.status];
+            const difficultyStyle = difficultyStyles[test.difficulty];
+            const scoreAccent = scoreTrack(test.bestScore || test.score || 0);
+            const result = results.find((item) => item.testId === test.id) || null;
+            return (
+              <Grid key={test.id} size={{ xs: 12, md: 6, xl: 4 }}>
+                <MotionCard initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} sx={{ ...glassCardSx, opacity: test.status === "locked" ? 0.7 : 1 }}>
+                  <CardContent sx={{ p: 2.2 }}>
+                    <Stack spacing={1.6}>
+                      <Stack direction="row" justifyContent="space-between" spacing={1.2}>
+                        <Box sx={{ width: 56, height: 56, borderRadius: 3.5, display: "grid", placeItems: "center", bgcolor: playfulPalette.softBlue, color: playfulPalette.ink }}>
+                          {iconMap[test.iconKey]}
+                        </Box>
+                        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
+                          <Chip label={difficultyStyle.label} sx={{ bgcolor: difficultyStyle.bg, color: difficultyStyle.color, fontWeight: 800 }} />
+                          <Chip label={statusStyle.label} sx={{ bgcolor: statusStyle.bg, color: statusStyle.color, fontWeight: 800 }} />
+                        </Stack>
+                      </Stack>
 
-                {/* Stats */}
-                <Stack direction="row" spacing={tokens.spacing.md} alignItems="center">
-                  <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                    <Quiz sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    <Typography variant="caption" color="text.secondary">
-                      {test.questions} سؤال
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                    <Timer sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    <Typography variant="caption" color="text.secondary">
-                      {test.duration} دقيقة
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" spacing={tokens.spacing.xs} alignItems="center">
-                    <Speed sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    <Typography variant="caption" color="text.secondary">
-                      {test.attempts} محاولة
-                    </Typography>
-                  </Stack>
-                </Stack>
-
-                {/* Score Progress */}
-                {test.completed && test.score && (
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: tokens.spacing.xs }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        آخر درجة: {test.score}%
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        أفضل درجة: {test.bestScore}%
-                      </Typography>
-                    </Box>
-                    <AppProgress
-                      value={test.score}
-                      color={getScoreColor(test.score)}
-                      showLabel
-                      label="الأداء"
-                    />
-                  </Box>
-                )}
-
-                {/* Action Buttons */}
-                <Stack direction="row" spacing={1}>
-                  <AppButton
-                    startIcon={test.status === 'locked' ? <Visibility /> : <PlayArrow />}
-                    color={test.completed ? 'success' : 'primary'}
-                    onClick={() => handleStartTest(test)}
-                    disabled={test.status === 'locked'}
-                    fullWidth
-                  >
-                    {test.status === 'locked' ? 'مقفل' : test.completed ? 'مراجعة' : 'بدء الاختبار'}
-                  </AppButton>
-                  {test.completed && (
-                    <AppButton
-                      startIcon={<Visibility />}
-                      color="secondary"
-                      onClick={() => {
-                        const result = testResults.find(r => r.testId === test.id);
-                        if (result) handleViewResults(result);
-                      }}
-                    >
-                      النتائج
-                    </AppButton>
-                  )}
-                </Stack>
-              </Stack>
-            </AppCard>
-          </AppGrid>
-        ))}
-      </AppGrid>
-
-      {/* Test Results Dialog */}
-      <Dialog open={showResults} onClose={() => setShowResults(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          <Typography variant="h6" sx={{ fontWeight: 900 }}>
-            📊 نتائج الاختبار
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          {selectedTest && testResults.find(r => r.testId === selectedTest.id) && (
-            <Stack spacing={tokens.spacing.lg}>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: tokens.spacing.md }}>
-                  {selectedTest.arabicTitle}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {selectedTest.arabicDescription}
-                </Typography>
-              </Box>
-
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>المقياس</TableCell>
-                      <TableCell>القيمة</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>الدرجة</TableCell>
-                      <TableCell>
-                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                          {testResults.find(r => r.testId === selectedTest.id)?.score}%
+                      <Box>
+                        <Typography sx={{ color: playfulPalette.ink, fontWeight: 900, fontSize: "1.15rem", mb: 0.5 }}>
+                          {test.arabicTitle}
                         </Typography>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>الإجابات الصحيحة</TableCell>
-                      <TableCell>
-                        {testResults.find(r => r.testId === selectedTest.id)?.correctAnswers} / {testResults.find(r => r.testId === selectedTest.id)?.totalQuestions}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>الوقت المستغرق</TableCell>
-                      <TableCell>
-                        {formatTime(testResults.find(r => r.testId === selectedTest.id)?.timeSpent || 0)}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>تاريخ الإنجاز</TableCell>
-                      <TableCell>
-                        {formatDate(testResults.find(r => r.testId === selectedTest.id)?.completedAt || new Date())}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                        <Typography sx={{ color: playfulPalette.inkSoft, lineHeight: 1.7 }}>
+                          {test.arabicDescription}
+                        </Typography>
+                      </Box>
 
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: tokens.spacing.md }}>
-                  التغذية الراجعة
-                </Typography>
-                <Typography variant="body2">
-                  {testResults.find(r => r.testId === selectedTest.id)?.feedback}
-                </Typography>
-              </Box>
+                      <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
+                        <Chip label={`${test.questions} questions`} size="small" sx={{ bgcolor: playfulPalette.softPeach, color: "#A96324", fontWeight: 800 }} />
+                        <Chip label={formatMinutes(test.duration)} size="small" sx={{ bgcolor: playfulPalette.softLilac, color: "#5F65C7", fontWeight: 800 }} />
+                        <Chip label={`${test.attempts} attempts`} size="small" sx={{ bgcolor: playfulPalette.softBlue, color: playfulPalette.ink, fontWeight: 800 }} />
+                      </Stack>
 
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: tokens.spacing.md }}>
-                  التوصيات
-                </Typography>
-                <List>
-                  {testResults.find(r => r.testId === selectedTest.id)?.recommendations.map((rec, index) => (
-                    <ListItem key={index}>
-                      <ListItemIcon>
-                        <CheckCircle color="success" />
-                      </ListItemIcon>
-                      <ListItemText primary={rec} />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <AppButton onClick={() => setShowResults(false)}>
-            إغلاق
-          </AppButton>
-          <AppButton
-            startIcon={<Share />}
-            color="primary"
-            onClick={() => console.log('Share results')}
-          >
-            مشاركة النتائج
-          </AppButton>
-        </DialogActions>
-      </Dialog>
+                      {test.completed && (
+                        <Box sx={{ borderRadius: 3, p: 1.5, bgcolor: scoreAccent.track, border: "1px solid rgba(255,255,255,0.72)" }}>
+                          <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.9 }}>
+                            <Typography sx={{ color: playfulPalette.ink, fontWeight: 800, fontSize: "0.92rem" }}>
+                              Latest: {test.score}%
+                            </Typography>
+                            <Typography sx={{ color: playfulPalette.inkSoft, fontWeight: 800, fontSize: "0.92rem" }}>
+                              Best: {test.bestScore}%
+                            </Typography>
+                          </Stack>
+                          <LinearProgress
+                            variant="determinate"
+                            value={Math.max(0, Math.min(100, test.bestScore || test.score))}
+                            sx={{
+                              height: 10,
+                              borderRadius: 999,
+                              bgcolor: "rgba(255,255,255,0.6)",
+                              "& .MuiLinearProgress-bar": {
+                                borderRadius: 999,
+                                bgcolor: scoreAccent.bar,
+                              },
+                            }}
+                          />
+                        </Box>
+                      )}
 
-      {filteredTests.length === 0 && (
-        <Alert severity="info" sx={{ mt: tokens.spacing.lg }}>
-          <AlertTitle>لا توجد اختبارات</AlertTitle>
-          لا توجد اختبارات تطابق معايير البحث حالياً.
-        </Alert>
-      )}
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                        <Button
+                          variant="contained"
+                          startIcon={test.completed ? <VisibilityRoundedIcon /> : <PlayArrowRoundedIcon />}
+                          disabled={test.status === "locked"}
+                          onClick={() => handleOpenTest(test)}
+                          sx={{
+                            flex: 1,
+                            borderRadius: 999,
+                            py: 1.15,
+                            fontWeight: 900,
+                            background: test.completed ? playfulPalette.actionGradient : "linear-gradient(135deg, #79D7FF 0%, #B39DFF 100%)",
+                            color: playfulPalette.ink,
+                            boxShadow: "none",
+                            "&:hover": { boxShadow: "none", opacity: 0.92 },
+                          }}
+                        >
+                          {test.status === "locked" ? "Locked" : test.completed ? "Open activity" : "Start activity"}
+                        </Button>
+                        {result && (
+                          <Button
+                            variant="outlined"
+                            onClick={() => setSelectedResult(result)}
+                            sx={{ borderRadius: 999, fontWeight: 900 }}
+                          >
+                            Result
+                          </Button>
+                        )}
+                      </Stack>
+                    </Stack>
+                  </CardContent>
+                </MotionCard>
+              </Grid>
+            );
+          })}
+        </Grid>
+
+        {!filteredTests.length && (
+          <Alert severity="info" sx={{ mt: 3, borderRadius: 4 }}>
+            No assessments match this filter right now.
+          </Alert>
+        )}
+      </Box>
+      {renderResultDialog()}
     </Box>
   );
 };
+
+export default TestingPage;

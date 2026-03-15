@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const { width, height } = Dimensions.get('window');
 
@@ -114,6 +115,7 @@ const WelcomeScreen: React.FC = () => {
       colors={['#4CAF50', '#2E7D32']}
       style={styles.container}
     >
+      <MobilePreviewBanner />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Status Bar Space */}
         <View style={styles.statusBarSpace} />

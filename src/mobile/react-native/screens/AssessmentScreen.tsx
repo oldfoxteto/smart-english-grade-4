@@ -13,6 +13,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
 import { AuthService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const { width } = Dimensions.get('window');
 
@@ -211,6 +212,7 @@ const AssessmentScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <MobilePreviewBanner />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity

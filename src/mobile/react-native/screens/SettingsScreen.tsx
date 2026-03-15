@@ -11,6 +11,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
 import { AuthService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const SettingsScreen: React.FC = () => {
   const [notifications, setNotifications] = useState(true);
@@ -110,6 +111,7 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <MobilePreviewBanner />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity

@@ -152,6 +152,19 @@ db.serialize(() => {
     PRIMARY KEY (userId, questId)
   )`);
 
+  db.run(`CREATE TABLE IF NOT EXISTS placement_results (
+    userId TEXT NOT NULL,
+    testId TEXT NOT NULL,
+    scorePercent INTEGER DEFAULT 0,
+    estimatedCefr TEXT DEFAULT 'A1',
+    correctAnswers INTEGER DEFAULT 0,
+    totalQuestions INTEGER DEFAULT 0,
+    timeSpentMinutes INTEGER DEFAULT 0,
+    attempts INTEGER DEFAULT 0,
+    completedAt TEXT,
+    PRIMARY KEY (userId, testId)
+  )`);
+
   db.run(`CREATE TABLE IF NOT EXISTS refresh_tokens (
     tokenId TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
@@ -780,6 +793,37 @@ function scoreToCefr(scorePercent) {
   return 'A1';
 }
 
+function getAssessmentFeedback(scorePercent) {
+  if (scorePercent >= 90) {
+    return {
+      feedback: 'Excellent work. Keep stretching into longer tasks and richer vocabulary.',
+      recommendations: [
+        'Try a harder speaking activity next.',
+        'Use new words in short daily sentences.',
+        'Review mistakes only once, then move forward.',
+      ],
+    };
+  }
+  if (scorePercent >= 70) {
+    return {
+      feedback: 'Good progress. You are building confidence and consistency.',
+      recommendations: [
+        'Repeat one similar exercise tomorrow.',
+        'Practice listening and grammar together.',
+        'Read one short text aloud after each lesson.',
+      ],
+    };
+  }
+  return {
+    feedback: 'Nice effort. Focus on one small skill at a time and keep practicing.',
+    recommendations: [
+      'Review the easier lessons again.',
+      'Choose slower audio and repeat key words.',
+      'Do one short practice session before taking another test.',
+    ],
+  };
+}
+
 async function cleanupExpiredRefreshTokens() {
   await dbRun(`DELETE FROM refresh_tokens WHERE expiresAt <= ? OR revokedAt IS NOT NULL`, [nowIso()]);
 }
@@ -1262,7 +1306,7 @@ app.get('/api/v1/placement/tests/:languageCode', authMiddleware, (req, res) => {
   });
 });
 
-app.post('/api/v1/placement/submit', authMiddleware, (req, res) => {
+app.post('/api/v1/placement/submit', authMiddleware, async (req, res) => {
   const { testId, answers } = req.body || {};
   const test = Object.values(PLACEMENT_TESTS).find((t) => t.id === testId) || PLACEMENT_TESTS.en;
   const answerMap = new Map((answers || []).map((a) => [a.questionId, a.optionId]));
@@ -1273,12 +1317,217 @@ app.post('/api/v1/placement/submit', authMiddleware, (req, res) => {
   const total = test.questions.length || 1;
   const scorePercent = Math.round((correct / total) * 100);
   const estimatedCefr = scoreToCefr(scorePercent);
+  const timeSpentMinutes = Math.max(
+    1,
+    Math.round(Number(req.body?.timeSpentMinutes || Math.ceil((test.totalQuestions || total) * 1.5)))
+  );
+  const completedAt = nowIso();
+
+  try {
+    const existing = await dbGet(
+      `SELECT attempts FROM placement_results WHERE userId = ? AND testId = ?`,
+      [req.userId, test.id]
+    );
+    await dbRun(
+      `INSERT INTO placement_results (
+         userId, testId, scorePercent, estimatedCefr, correctAnswers, totalQuestions, timeSpentMinutes, attempts, completedAt
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, testId) DO UPDATE SET
+         scorePercent = excluded.scorePercent,
+         estimatedCefr = excluded.estimatedCefr,
+         correctAnswers = excluded.correctAnswers,
+         totalQuestions = excluded.totalQuestions,
+         timeSpentMinutes = excluded.timeSpentMinutes,
+         attempts = excluded.attempts,
+         completedAt = excluded.completedAt`,
+      [
+        req.userId,
+        test.id,
+        scorePercent,
+        estimatedCefr,
+        correct,
+        total,
+        timeSpentMinutes,
+        Number(existing?.attempts || 0) + 1,
+        completedAt,
+      ]
+    );
+  } catch (error) {
+    console.error('placement/submit persistence error', error?.message || error);
+    return res.status(500).json({ error: 'PLACEMENT_SAVE_FAILED' });
+  }
+
   res.json({
     placementResult: {
       estimatedCefr,
       scorePercent,
     },
   });
+});
+
+app.get('/api/v1/testing/catalog', authMiddleware, async (req, res) => {
+  try {
+    const [placementRows, practiceRows, readingRows, progressRow] = await Promise.all([
+      dbAll(`SELECT * FROM placement_results WHERE userId = ? ORDER BY completedAt DESC`, [req.userId]),
+      dbAll(`SELECT * FROM practice_progress WHERE userId = ?`, [req.userId]),
+      dbAll(`SELECT * FROM reading_quest_progress WHERE userId = ?`, [req.userId]),
+      dbGet(`SELECT level, stars FROM progress WHERE userId = ?`, [req.userId]),
+    ]);
+
+    const practiceMap = new Map(practiceRows.map((row) => [row.exerciseId, row]));
+    const readingMap = new Map(readingRows.map((row) => [row.questId, row]));
+    const placementMap = new Map(placementRows.map((row) => [row.testId, row]));
+    const learnerLevel = Number(progressRow?.level || 1);
+
+    const tests = [];
+    const results = [];
+
+    Object.values(PLACEMENT_TESTS).forEach((test) => {
+      const result = placementMap.get(test.id);
+      const scorePercent = Number(result?.scorePercent || 0);
+      const feedbackPack = getAssessmentFeedback(scorePercent);
+      tests.push({
+        id: test.id,
+        title: test.title,
+        arabicTitle: 'اختبار تحديد المستوى',
+        description: 'Find the learner starting point before moving through the path.',
+        arabicDescription: 'يحدد مستوى البداية المناسب قبل متابعة المسار التعليمي.',
+        type: 'placement',
+        category: 'grammar',
+        difficulty: 'intermediate',
+        duration: Math.max(10, Number(result?.timeSpentMinutes || 12)),
+        questions: test.totalQuestions,
+        completed: Boolean(result),
+        score: scorePercent,
+        bestScore: scorePercent,
+        attempts: Number(result?.attempts || 0),
+        passingScore: 60,
+        status: result ? 'completed' : 'available',
+        iconKey: 'assessment',
+      });
+
+      if (result) {
+        results.push({
+          id: `result-${test.id}`,
+          testId: test.id,
+          score: scorePercent,
+          totalQuestions: Number(result.totalQuestions || test.totalQuestions),
+          correctAnswers: Number(result.correctAnswers || 0),
+          timeSpentMinutes: Number(result.timeSpentMinutes || 0),
+          completedAt: result.completedAt,
+          feedback: `Estimated level: ${result.estimatedCefr}. ${feedbackPack.feedback}`,
+          recommendations: feedbackPack.recommendations,
+        });
+      }
+    });
+
+    PRACTICE_EXERCISES.forEach((exercise) => {
+      const row = practiceMap.get(exercise.id);
+      const completed = Boolean(row?.completed);
+      const latestScore = Number(row?.score || 0);
+      const bestScore = Number(row?.bestScore || 0);
+      const scorePercent = bestScore || latestScore;
+      const feedbackPack = getAssessmentFeedback(scorePercent || 50);
+
+      tests.push({
+        id: exercise.id,
+        title: exercise.title,
+        arabicTitle: exercise.arabicTitle,
+        description: exercise.description,
+        arabicDescription: exercise.arabicDescription,
+        type: 'practice',
+        category: exercise.type,
+        difficulty: exercise.difficulty,
+        duration: exercise.duration,
+        questions: Math.max(8, Math.round(exercise.duration / 2)),
+        completed,
+        score: latestScore,
+        bestScore,
+        attempts: Number(row?.attempts || 0),
+        passingScore: 70,
+        status: learnerLevel < 2 && exercise.difficulty === 'advanced' ? 'locked' : completed ? 'completed' : 'available',
+        iconKey: exercise.type,
+      });
+
+      if (completed) {
+        results.push({
+          id: `result-${exercise.id}`,
+          testId: exercise.id,
+          score: latestScore,
+          totalQuestions: Math.max(8, Math.round(exercise.duration / 2)),
+          correctAnswers: Math.round((Math.max(0, latestScore) / 100) * Math.max(8, Math.round(exercise.duration / 2))),
+          timeSpentMinutes: exercise.duration,
+          completedAt: row?.updatedAt || null,
+          feedback: feedbackPack.feedback,
+          recommendations: feedbackPack.recommendations,
+        });
+      }
+    });
+
+    READING_QUESTS.forEach((quest) => {
+      const row = readingMap.get(quest.id);
+      const completed = Boolean(row?.completed);
+      const scorePercent = Number(row?.bestScore || 0);
+      const feedbackPack = getAssessmentFeedback(scorePercent || 50);
+      const questionCount = quest.paragraphs.length;
+
+      tests.push({
+        id: quest.id,
+        title: quest.title,
+        arabicTitle: quest.titleAr,
+        description: 'Read the story, answer quick checks, and unlock comprehension rewards.',
+        arabicDescription: 'اقرأ القصة وأجب عن أسئلة سريعة لقياس الفهم القرائي.',
+        type: 'progress',
+        category: 'reading',
+        difficulty: 'beginner',
+        duration: Math.max(8, questionCount * 4),
+        questions: questionCount,
+        completed,
+        score: scorePercent,
+        bestScore: scorePercent,
+        attempts: completed ? 1 : 0,
+        passingScore: 65,
+        status: completed ? 'completed' : 'available',
+        iconKey: 'reading',
+      });
+
+      if (completed) {
+        results.push({
+          id: `result-${quest.id}`,
+          testId: quest.id,
+          score: scorePercent,
+          totalQuestions: questionCount,
+          correctAnswers: Math.round((scorePercent / 100) * questionCount),
+          timeSpentMinutes: Math.max(8, questionCount * 4),
+          completedAt: row?.completedAt || null,
+          feedback: feedbackPack.feedback,
+          recommendations: feedbackPack.recommendations,
+        });
+      }
+    });
+
+    const completedResults = results.filter((item) => Number.isFinite(item.score));
+    const averageScore = completedResults.length
+      ? Math.round(completedResults.reduce((sum, item) => sum + Number(item.score || 0), 0) / completedResults.length)
+      : 0;
+    const totalTimeMinutes = completedResults.reduce((sum, item) => sum + Number(item.timeSpentMinutes || 0), 0);
+
+    res.json({
+      tests,
+      results,
+      summary: {
+        totalTests: tests.length,
+        completedTests: tests.filter((item) => item.completed).length,
+        averageScore,
+        totalTimeMinutes,
+      },
+      generatedAt: nowIso(),
+    });
+  } catch (error) {
+    console.error('testing/catalog error', error?.message || error);
+    res.status(500).json({ error: 'TESTING_CATALOG_FAILED' });
+  }
 });
 
 app.get('/api/v1/learning-path', authMiddleware, (req, res) => {

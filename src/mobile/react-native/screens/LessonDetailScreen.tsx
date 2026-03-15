@@ -12,6 +12,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { NavigationService } from '../services';
 import { FirestoreService, AuthService } from '../services';
+import MobilePreviewBanner from '../components/MobilePreviewBanner';
 
 const { width } = Dimensions.get('window');
 const MOBILE_PREVIEW_MESSAGE = 'Mobile lesson audio is not production-ready yet. This mobile screen remains a phase 2 preview.';
@@ -257,10 +258,7 @@ const LessonDetailScreen: React.FC<LessonDetailScreenProps> = ({ route }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.previewBanner}>
-        <Icon name="info-outline" size={18} color="#7A4B00" />
-        <Text style={styles.previewBannerText}>{MOBILE_PREVIEW_MESSAGE}</Text>
-      </View>
+      <MobilePreviewBanner message={MOBILE_PREVIEW_MESSAGE} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -296,22 +294,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAF5',
-  },
-  previewBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#FFF3CD',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F2D58B',
-  },
-  previewBannerText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#7A4B00',
-    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
