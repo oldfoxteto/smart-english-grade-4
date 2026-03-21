@@ -18,3 +18,7 @@ services:
         value: https://your-vercel-domain.vercel.app
       - key: OPENAI_API_KEY
         sync: false
+      - key: GOOGLE_AI_STUDIO_API_KEY
+        sync: false
+      - key: GOOGLE_AI_STUDIO_MODEL
+        value: gemini-2.5-flash

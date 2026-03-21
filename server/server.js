@@ -27,6 +27,9 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY || process.env.GEMINI_API_KEY || '';
+const GOOGLE_AI_STUDIO_MODEL = process.env.GOOGLE_AI_STUDIO_MODEL || 'gemini-2.5-flash';
+const GOOGLE_AI_STUDIO_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const parseJsonEnv = (value, fallback = null) => {
   try {
     return value ? JSON.parse(value) : fallback;
@@ -454,12 +457,25 @@ const classifyAiError = (error) => {
   if (status === 429) {
     return 'OPENAI_RATE_LIMITED';
   }
+  if (
+    message.includes('api key not valid')
+    || message.includes('permission denied')
+    || message.includes('request had invalid authentication credentials')
+  ) {
+    return 'GOOGLE_AI_STUDIO_INVALID_KEY';
+  }
+  if (message.includes('resource has been exhausted') || message.includes('quota')) {
+    return 'GOOGLE_AI_STUDIO_QUOTA_EXCEEDED';
+  }
   if (status >= 500 || message.includes('timed out') || message.includes('network')) {
     return 'OPENAI_UPSTREAM_ERROR';
   }
   return 'OPENAI_REQUEST_FAILED';
 };
 const aiRuntimeStatus = () => {
+  if (GOOGLE_AI_STUDIO_API_KEY) {
+    return { configured: true, mode: 'google-ai-studio', model: GOOGLE_AI_STUDIO_MODEL };
+  }
   if (!OPENAI_API_KEY) {
     return { configured: false, mode: 'fallback' };
   }
@@ -478,6 +494,208 @@ const tutorFallbackReply = (hasImage) => (
     ? 'Vision mode is temporarily unavailable. Please continue with text chat.'
     : "AI tutor is temporarily unavailable right now. Let's continue with short practice."
 );
+
+async function callGoogleAiStudio({
+  prompt,
+  temperature = 0.7,
+  maxOutputTokens = 512,
+  responseMimeType = 'text/plain',
+  responseSchema = undefined,
+}) {
+  if (!GOOGLE_AI_STUDIO_API_KEY) {
+    throw new Error('GOOGLE_AI_STUDIO_API_KEY_MISSING');
+  }
+
+  const response = await fetch(
+    `${GOOGLE_AI_STUDIO_API_BASE}/${GOOGLE_AI_STUDIO_MODEL}:generateContent?key=${GOOGLE_AI_STUDIO_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature,
+          maxOutputTokens,
+          responseMimeType,
+          ...(responseSchema ? { responseSchema } : {}),
+        },
+      }),
+    }
+  );
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const apiMessage = payload?.error?.message || `GOOGLE_AI_STUDIO_HTTP_${response.status}`;
+    const error = new Error(apiMessage);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = payload?.candidates?.[0]?.content?.parts
+    ?.map((part) => part?.text || '')
+    .join('')
+    .trim();
+
+  if (!text) {
+    throw new Error('GOOGLE_AI_STUDIO_EMPTY_RESPONSE');
+  }
+
+  return text;
+}
+
+function extractJsonObject(text) {
+  const value = String(text || '').trim();
+  if (!value) return null;
+
+  const direct = parseJSON(value, null);
+  if (direct && typeof direct === 'object') {
+    return direct;
+  }
+
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    return parseJSON(value.slice(start, end + 1), null);
+  }
+
+  return null;
+}
+
+function parseTutorModelOutput(rawText) {
+  const json = extractJsonObject(rawText);
+  if (json) {
+    return {
+      reply: String(json.reply || json.message || "Let's keep learning together.").trim(),
+      correction: json.correction ? String(json.correction).trim() : null,
+    };
+  }
+
+  let reply = String(rawText || '').trim() || "Let's keep learning together.";
+  let correction = null;
+
+  const bracketMatch = reply.match(/\[CORRECTION:\s*(.+?)\]/i);
+  if (bracketMatch) {
+    correction = bracketMatch[1].trim();
+    reply = reply.replace(/\[CORRECTION:\s*.+?\]/ig, '').trim();
+  }
+
+  if (!correction) {
+    const lineMatch = reply.match(/(?:^|\n)CORRECTION:\s*(.+)$/im);
+    if (lineMatch) {
+      correction = lineMatch[1].trim();
+      reply = reply.replace(/(?:^|\n)CORRECTION:\s*.+$/im, '').trim();
+    }
+  }
+
+  if (!reply) {
+    reply = "Let's keep learning together.";
+  }
+
+  return { reply, correction };
+}
+
+async function generateTutorText({ system, textPayload, userText }) {
+  if (GOOGLE_AI_STUDIO_API_KEY) {
+    const raw = await callGoogleAiStudio({
+      prompt: `${system}
+
+Conversation history:
+${textPayload || 'No previous messages.'}
+
+Student: ${userText}
+Reply now.`,
+      temperature: 0.3,
+      maxOutputTokens: 220,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          reply: { type: 'STRING' },
+          correction: { type: 'STRING', nullable: true },
+        },
+        required: ['reply', 'correction'],
+      },
+    });
+
+    return parseTutorModelOutput(raw);
+  }
+
+  if (!openai) {
+    return null;
+  }
+
+  const response = await openai.responses.create({
+    model: 'gpt-4o-mini',
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: system }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: `${textPayload}\nStudent: ${userText}` },
+        ],
+      },
+    ],
+  });
+
+  return parseTutorModelOutput(response.output_text || "Let's keep learning together.");
+}
+
+async function generateContentWithAi({ topic, level, mode }) {
+  if (GOOGLE_AI_STUDIO_API_KEY) {
+    const text = await callGoogleAiStudio({
+      prompt: `Generate child-safe English ${mode} content at ${level} about "${topic}".
+Return compact JSON only with fields: title, text, questions.
+questions must be an array of objects with: question, options, answer.`,
+      temperature: 0.4,
+      maxOutputTokens: 1400,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          text: { type: 'STRING' },
+          questions: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                question: { type: 'STRING' },
+                options: {
+                  type: 'ARRAY',
+                  items: { type: 'STRING' },
+                },
+                answer: { type: 'STRING' },
+              },
+              required: ['question', 'options', 'answer'],
+            },
+          },
+        },
+        required: ['title', 'text', 'questions'],
+      },
+    });
+
+    return extractJsonObject(text) || { text };
+  }
+
+  if (!openai) {
+    return null;
+  }
+
+  const out = await openai.responses.create({
+    model: 'gpt-4o-mini',
+    input: `Generate child-safe English ${mode} content at ${level} about "${topic}". Return compact JSON with fields: title,text,questions[].`,
+  });
+
+  return parseJSON(out.output_text || '{}', { text: out.output_text || '' });
+}
 const policyVersion = '2026-03-child-safe-v1';
 const safetyPolicy = {
   version: policyVersion,
@@ -1438,7 +1656,7 @@ app.post('/api/v1/ai/tutor/reply', authMiddleware, async (req, res) => {
       }
     }
 
-    if (!openai) {
+    if (!openai && !GOOGLE_AI_STUDIO_API_KEY) {
       return res.json({
         reply: imageBase64
           ? 'I can see the image, but AI proxy is offline right now.'
@@ -1460,29 +1678,32 @@ Rules:
     const textPayload = compactHistory.map((m) => `${m.role === 'bot' ? 'Tutor' : 'Student'}: ${m.text}`).join('\n');
     const userText = String(userMessage || '').slice(0, 1000);
 
-    const response = await openai.responses.create({
-      model: 'gpt-4o-mini',
-      input: [
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: system }],
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: `${textPayload}\nStudent: ${userText}` },
-            ...(imageBase64 ? [{ type: 'input_image', image_url: imageBase64 }] : []),
-          ],
-        },
-      ],
-    });
-
-    let reply = response.output_text || "Let's keep learning together.";
+    let reply = null;
     let correction = null;
-    const match = reply.match(/\[CORRECTION:\s*(.+?)\]/i);
-    if (match) {
-      correction = match[1];
-      reply = reply.replace(/\[CORRECTION:\s*.+?\]/ig, '').trim();
+    if (imageBase64 && openai) {
+      const response = await openai.responses.create({
+        model: 'gpt-4o-mini',
+        input: [
+          {
+            role: 'system',
+            content: [{ type: 'input_text', text: system }],
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: `${textPayload}\nStudent: ${userText}` },
+              { type: 'input_image', image_url: imageBase64 },
+            ],
+          },
+        ],
+      });
+      const parsed = parseTutorModelOutput(response.output_text || "Let's keep learning together.");
+      reply = parsed.reply;
+      correction = parsed.correction;
+    } else {
+      const parsed = await generateTutorText({ system, textPayload, userText });
+      reply = parsed?.reply || "Let's keep learning together.";
+      correction = parsed?.correction || null;
     }
 
     res.json({ reply, correction, safety: safeBlocked });
@@ -1516,17 +1737,14 @@ app.post('/api/v1/content/generate', authMiddleware, async (req, res) => {
       return res.json({ cached: true, content: parseJSON(cached.content, { text: cached.content }) });
     }
 
-    if (!openai) {
+    const generatedContent = await generateContentWithAi({ topic, level, mode });
+    if (!generatedContent) {
       const fallback = { text: `Topic: ${topic}. Practice simple ${level} ${mode} tasks.` };
       await dbRun(`INSERT OR REPLACE INTO content_cache (cacheKey, content, createdAt) VALUES (?, ?, ?)`, [cacheKey, JSON.stringify(fallback), nowIso()]);
       return res.json({ cached: false, content: fallback });
     }
 
-    const out = await openai.responses.create({
-      model: 'gpt-4o-mini',
-      input: `Generate child-safe English ${mode} content at ${level} about "${topic}". Return compact JSON with fields: title,text,questions[].`,
-    });
-    const content = parseJSON(out.output_text || '{}', { text: out.output_text || '' });
+    const content = generatedContent;
     await dbRun(`INSERT OR REPLACE INTO content_cache (cacheKey, content, createdAt) VALUES (?, ?, ?)`, [cacheKey, JSON.stringify(content), nowIso()]);
     return res.json({ cached: false, content });
   } catch (error) {
