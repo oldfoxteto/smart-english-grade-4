@@ -27,10 +27,17 @@ const DEFAULT_CLIENT_URLS = [
   'https://ai-english-master.firebaseapp.com',
   'https://smart-english-grade-4.vercel.app',
 ];
-const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || DEFAULT_CLIENT_URLS.join(','))
+const PLACEHOLDER_CLIENT_URLS = new Set([
+  'https://your-vercel-domain.vercel.app',
+]);
+const configuredClientUrls = `${process.env.CLIENT_URLS || process.env.CLIENT_URL || ''}`
   .split(',')
   .map(s => s.trim())
-  .filter(Boolean);
+  .filter((url) => Boolean(url) && !PLACEHOLDER_CLIENT_URLS.has(url));
+const CLIENT_URLS = Array.from(new Set([
+  ...DEFAULT_CLIENT_URLS,
+  ...configuredClientUrls,
+]));
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
