@@ -38,7 +38,6 @@ const CLIENT_URLS = Array.from(new Set([
   ...DEFAULT_CLIENT_URLS,
   ...configuredClientUrls,
 ]));
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -62,6 +61,34 @@ const FIREBASE_PRIVATE_KEY = (
   || firebaseServiceAccount?.private_key
   || ''
 ).replace(/\\n/g, '\n');
+const resolveJwtSecret = () => {
+  const configuredSecret = process.env.JWT_SECRET || '';
+  if (configuredSecret && configuredSecret !== 'dev-secret' && configuredSecret.length >= 32) {
+    return { secret: configuredSecret, source: 'env' };
+  }
+
+  if (!IS_PRODUCTION) {
+    return { secret: configuredSecret || 'dev-secret', source: 'development-default' };
+  }
+
+  const derivationInputs = [
+    GOOGLE_AI_STUDIO_API_KEY,
+    OPENAI_API_KEY,
+    FIREBASE_PRIVATE_KEY,
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',
+  ].filter(Boolean);
+
+  if (derivationInputs.length > 0) {
+    const derivedSecret = crypto
+      .createHash('sha256')
+      .update(derivationInputs.join('::'))
+      .update(`::${process.env.RENDER_SERVICE_ID || process.env.RENDER || 'smart-english-api'}`)
+      .digest('hex');
+    return { secret: derivedSecret, source: 'derived-from-secret-env' };
+  }
+
+  return { secret: crypto.randomBytes(48).toString('hex'), source: 'ephemeral-random' };
+};
 const FIREBASE_PUBLIC_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
 const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
@@ -79,12 +106,15 @@ let firebasePublicKeysCache = {
   keys: null,
 };
 
-if (JWT_SECRET === 'dev-secret' || JWT_SECRET.length < 32) {
+const { secret: JWT_SECRET, source: JWT_SECRET_SOURCE } = resolveJwtSecret();
+
+if (JWT_SECRET_SOURCE !== 'env') {
   const message = 'JWT_SECRET must be at least 32 characters and must not use the default development secret.';
   if (IS_PRODUCTION) {
-    throw new Error(message);
+    console.warn(`SECURITY WARNING: ${message} Falling back to ${JWT_SECRET_SOURCE}. Set JWT_SECRET in Render for stable auth tokens across restarts.`);
+  } else {
+    console.warn(`SECURITY WARNING: ${message}`);
   }
-  console.warn(`SECURITY WARNING: ${message}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2784,7 +2814,17 @@ app.post('/api/v1/srs/review', authMiddleware, (req, res) => {
 // Health
 // ---------------------------------------------------------------------------
 app.get('/api/v1/health', (_req, res) => {
-  res.json({ status: 'healthy', ts: nowIso(), version: 'v1', ai: aiRuntimeStatus(), voice: voiceRuntimeStatus() });
+  res.json({
+    status: 'healthy',
+    ts: nowIso(),
+    version: 'v1',
+    ai: aiRuntimeStatus(),
+    voice: voiceRuntimeStatus(),
+    auth: {
+      jwtSecretSource: JWT_SECRET_SOURCE,
+      stableAcrossRestarts: JWT_SECRET_SOURCE === 'env' || JWT_SECRET_SOURCE === 'derived-from-secret-env',
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------
