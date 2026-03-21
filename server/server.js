@@ -23,6 +23,8 @@ const DEFAULT_CLIENT_URLS = [
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
+  'https://beefluent-7ae36.web.app',
+  'https://beefluent-2ce61.web.app',
   'https://beefluent.web.app',
   'https://ai-english-master.web.app',
   'https://ai-english-master.firebaseapp.com',
@@ -54,7 +56,7 @@ const parseJsonEnv = (value, fallback = null) => {
   }
 };
 const firebaseServiceAccount = parseJsonEnv(process.env.FIREBASE_SERVICE_ACCOUNT_JSON, null);
-const FIREBASE_DEFAULT_PROJECT_ID = 'ai-english-master';
+const FIREBASE_DEFAULT_PROJECT_ID = 'beefluent';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || firebaseServiceAccount?.project_id || FIREBASE_DEFAULT_PROJECT_ID;
 const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL || firebaseServiceAccount?.client_email || '';
 const FIREBASE_PRIVATE_KEY = (

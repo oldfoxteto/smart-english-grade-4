@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "beefluent",
+    "site": "beefluent-7ae36",
     "public": "dist",
     "ignore": [
       "firebase.json",

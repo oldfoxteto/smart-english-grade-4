@@ -15,7 +15,9 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CLIENT_URLS
-        value: https://beefluent.web.app,https://ai-english-master.web.app,https://ai-english-master.firebaseapp.com,https://smart-english-grade-4.vercel.app
+        value: https://beefluent.web.app,https://beefluent-7ae36.web.app,https://beefluent-2ce61.web.app,https://smart-english-grade-4.vercel.app
+      - key: FIREBASE_PROJECT_ID
+        value: beefluent
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_AI_STUDIO_API_KEY

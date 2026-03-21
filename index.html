@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta http-equiv="Content-Language" content="ar" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        base-uri 'self';
+        form-action 'self';
+        frame-ancestors 'none';
+        object-src 'none';
+        script-src 'self';
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src 'self' data: https://fonts.gstatic.com;
+        img-src 'self' data: blob: https:;
+        connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://smart-english-api.onrender.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseinstallations.googleapis.com https://firestore.googleapis.com https://www.googleapis.com https://*.ingest.sentry.io;
+        frame-src 'self' https://beefluent-7ae36.firebaseapp.com https://beefluent.web.app https://beefluent-7ae36.web.app https://accounts.google.com;
+        media-src 'self' blob:;
+        worker-src 'self' blob:;
+      "
+    />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BeeFluent - English Learning Academy</title>
@@ -16,10 +34,9 @@
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        background-color: #F8FAFB;
-        font-family: 'Cairo', 'Tajawal', 'Nunito', Arial, sans-serif;
-        direction: rtl;
-        text-align: right;
+        background-color: #F7FAFF;
+        font-family: 'Nunito', 'Cairo', 'Tajawal', Arial, sans-serif;
+        color: #12223B;
       }
       #root { min-height: 100vh; }
     </style>

@@ -1,5 +1,14 @@
 {
   "projects": {
-    "default": "ai-english-master"
+    "default": "beefluent"
+  },
+  "targets": {
+    "beefluent": {
+      "hosting": {
+        "app": [
+          "beefluent-7ae36"
+        ]
+      }
+    }
   }
 }
