@@ -18,7 +18,16 @@ require('dotenv').config();
 // Config
 // ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 4000;
-const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:5173')
+const DEFAULT_CLIENT_URLS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'https://ai-english-master.web.app',
+  'https://ai-english-master.firebaseapp.com',
+  'https://smart-english-grade-4.vercel.app',
+];
+const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || DEFAULT_CLIENT_URLS.join(','))
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);

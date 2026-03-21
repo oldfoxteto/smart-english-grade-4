@@ -15,7 +15,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CLIENT_URLS
-        value: https://your-vercel-domain.vercel.app
+        value: https://ai-english-master.web.app,https://ai-english-master.firebaseapp.com,https://smart-english-grade-4.vercel.app
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_AI_STUDIO_API_KEY
