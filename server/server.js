@@ -27,6 +27,23 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+const parseJsonEnv = (value, fallback = null) => {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const firebaseServiceAccount = parseJsonEnv(process.env.FIREBASE_SERVICE_ACCOUNT_JSON, null);
+const FIREBASE_DEFAULT_PROJECT_ID = 'ai-english-master';
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || firebaseServiceAccount?.project_id || FIREBASE_DEFAULT_PROJECT_ID;
+const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL || firebaseServiceAccount?.client_email || '';
+const FIREBASE_PRIVATE_KEY = (
+  process.env.FIREBASE_PRIVATE_KEY
+  || firebaseServiceAccount?.private_key
+  || ''
+).replace(/\\n/g, '\n');
+const FIREBASE_PUBLIC_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
 const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
@@ -36,6 +53,12 @@ const ACCESS_COOKIE_NAME = process.env.ACCESS_COOKIE_NAME || 'lisan_access';
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || 'lisan_refresh';
 const COOKIE_SAME_SITE = process.env.COOKIE_SAME_SITE || 'strict';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+let firebaseAuthVerifier = null;
+let firebaseAdminInitAttempted = false;
+let firebasePublicKeysCache = {
+  expiresAt: 0,
+  keys: null,
+};
 
 if (JWT_SECRET === 'dev-secret' || JWT_SECRET.length < 32) {
   const message = 'JWT_SECRET must be at least 32 characters and must not use the default development secret.';
@@ -184,8 +207,25 @@ const parseJSON = (value, fallback) => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
 const allowedOriginSet = new Set(CLIENT_URLS);
+const isPrivateHostname = (hostname) => (
+  hostname === 'localhost'
+  || hostname === '127.0.0.1'
+  || hostname === '::1'
+  || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  || /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+);
+const isAllowedDevOrigin = (originValue) => {
+  if (IS_PRODUCTION || !originValue) return false;
+  try {
+    const { protocol, hostname } = new URL(originValue);
+    return (protocol === 'http:' || protocol === 'https:') && isPrivateHostname(hostname);
+  } catch {
+    return false;
+  }
+};
 const corsOriginMatcher = (origin, callback) => {
-  if (!origin || allowedOriginSet.has(origin)) {
+  if (!origin || allowedOriginSet.has(origin) || isAllowedDevOrigin(origin)) {
     callback(null, true);
     return;
   }
@@ -195,6 +235,111 @@ const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const sanitizeDisplayName = (value) => String(value || 'Learner').trim().replace(/\s+/g, ' ').slice(0, 60) || 'Learner';
 const isValidEmail = (value) => EMAIL_RE.test(normalizeEmail(value));
 const isValidPassword = (value) => PASSWORD_RE.test(String(value || ''));
+const firebaseBridgeSchemaValid = (body) => typeof body?.idToken === 'string' && body.idToken.trim().length > 0;
+
+function getFirebaseAuthVerifier() {
+  if (firebaseAuthVerifier || firebaseAdminInitAttempted) {
+    return firebaseAuthVerifier;
+  }
+
+  firebaseAdminInitAttempted = true;
+
+  if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
+    return null;
+  }
+
+  try {
+    const { cert, getApps, initializeApp } = require('firebase-admin/app');
+    const { getAuth } = require('firebase-admin/auth');
+
+    if (getApps().length === 0) {
+      initializeApp({
+        credential: cert({
+          projectId: FIREBASE_PROJECT_ID,
+          clientEmail: FIREBASE_CLIENT_EMAIL,
+          privateKey: FIREBASE_PRIVATE_KEY,
+        }),
+        projectId: FIREBASE_PROJECT_ID,
+      });
+    }
+
+    firebaseAuthVerifier = getAuth();
+    return firebaseAuthVerifier;
+  } catch (error) {
+    console.warn('Firebase Admin is unavailable on the local server:', error.message);
+    return null;
+  }
+}
+
+function isFirebaseAdminEnabled() {
+  return Boolean(FIREBASE_PROJECT_ID);
+}
+
+async function getFirebasePublicKeys(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && firebasePublicKeysCache.keys && firebasePublicKeysCache.expiresAt > now) {
+    return firebasePublicKeysCache.keys;
+  }
+
+  const response = await fetch(FIREBASE_PUBLIC_CERTS_URL);
+  if (!response.ok) {
+    throw new Error(`FIREBASE_CERT_FETCH_FAILED:${response.status}`);
+  }
+
+  const keys = await response.json();
+  const cacheControl = String(response.headers.get('cache-control') || '');
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const maxAgeSeconds = Number(maxAgeMatch?.[1] || 3600);
+
+  firebasePublicKeysCache = {
+    keys,
+    expiresAt: now + (maxAgeSeconds * 1000),
+  };
+
+  return keys;
+}
+
+async function verifyFirebaseIdTokenWithPublicKeys(idToken) {
+  const decoded = jwt.decode(idToken, { complete: true });
+  const header = decoded?.header || {};
+
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw new Error('INVALID_FIREBASE_TOKEN');
+  }
+
+  const verifyOptions = {
+    algorithms: ['RS256'],
+    audience: FIREBASE_PROJECT_ID,
+    issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+  };
+
+  const publicKeys = await getFirebasePublicKeys();
+  let certificate = publicKeys?.[header.kid];
+
+  if (!certificate) {
+    const refreshedKeys = await getFirebasePublicKeys(true);
+    certificate = refreshedKeys?.[header.kid];
+  }
+
+  if (!certificate) {
+    throw new Error('FIREBASE_CERT_NOT_FOUND');
+  }
+
+  return jwt.verify(idToken, certificate, verifyOptions);
+}
+
+async function verifyFirebaseIdToken(idToken) {
+  if (!FIREBASE_PROJECT_ID) {
+    throw new Error('FIREBASE_PROJECT_NOT_CONFIGURED');
+  }
+
+  const verifier = getFirebaseAuthVerifier();
+  if (verifier) {
+    return verifier.verifyIdToken(idToken, true);
+  }
+
+  return verifyFirebaseIdTokenWithPublicKeys(idToken);
+}
 const parseDurationMs = (value, fallbackMs) => {
   if (typeof value !== 'string') return fallbackMs;
   const match = value.trim().match(/^(\d+)([smhd])$/i);
@@ -222,11 +367,20 @@ const accessTokenTtlMs = parseDurationMs(ACCESS_TOKEN_TTL, 15 * 60 * 1000);
 const isAllowedOrigin = (originValue) => {
   if (!originValue) return true;
   try {
-    return allowedOriginSet.has(new URL(originValue).origin);
+    const normalizedOrigin = new URL(originValue).origin;
+    return allowedOriginSet.has(normalizedOrigin) || isAllowedDevOrigin(normalizedOrigin);
   } catch {
     return false;
   }
 };
+
+function buildAuthResponse(userRow, tokens) {
+  return {
+    user: buildUserPayload(userRow),
+    token: tokens.token,
+    refreshToken: tokens.refreshToken,
+  };
+}
 
 function buildCookieOptions(maxAgeMs, extra = {}) {
   return {
@@ -891,6 +1045,51 @@ function buildUserPayload(row) {
   };
 }
 
+function normalizeFirebaseProvider(decodedProvider, requestedProvider) {
+  const provider = String(decodedProvider || requestedProvider || 'password').toLowerCase();
+
+  if (provider.includes('google')) return 'google.com';
+  if (provider.includes('password')) return 'password';
+
+  return provider;
+}
+
+async function findOrCreateFirebaseUser({ email, displayName }) {
+  const normalizedEmail = normalizeEmail(email);
+  const safeDisplayName = sanitizeDisplayName(displayName || normalizedEmail.split('@')[0]);
+  const existing = await dbGet(`SELECT id, email, displayName, createdAt FROM users WHERE email = ?`, [normalizedEmail]);
+
+  if (existing) {
+    if (!existing.displayName || existing.displayName !== safeDisplayName) {
+      await dbRun(`UPDATE users SET displayName = ? WHERE id = ?`, [safeDisplayName, existing.id]);
+    }
+
+    return {
+      id: existing.id,
+      email: existing.email,
+      displayName: safeDisplayName,
+      createdAt: existing.createdAt,
+    };
+  }
+
+  const id = generateId();
+  const createdAt = nowIso();
+  const passwordHash = bcrypt.hashSync(`${generateId()}-${generateId()}`, 12);
+
+  await dbRun(
+    `INSERT INTO users (id, email, passwordHash, displayName, createdAt) VALUES (?,?,?,?,?)`,
+    [id, normalizedEmail, passwordHash, safeDisplayName, createdAt]
+  );
+  await dbRun(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
+
+  return {
+    id,
+    email: normalizedEmail,
+    displayName: safeDisplayName,
+    createdAt,
+  };
+}
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization || '';
   const tokenFromHeader = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -1011,7 +1210,10 @@ app.post('/api/v1/auth/register', authLimiter, async (req, res) => {
     await dbRun(`INSERT OR IGNORE INTO progress (userId, updatedAt) VALUES (?,?)`, [id, createdAt]);
     const tokens = await issueTokens(id);
     applyAuthCookies(res, tokens);
-    res.status(201).json({ user: { id, email: normalizedEmail, displayName: safeDisplayName, status: 'active', roles: ['user'] } });
+    res.status(201).json(buildAuthResponse(
+      { id, email: normalizedEmail, displayName: safeDisplayName },
+      tokens
+    ));
   } catch (err) {
     if (String(err?.message || '').includes('UNIQUE')) return res.status(409).json({ error: 'EMAIL_EXISTS' });
     return res.status(500).json({ error: 'DB_ERROR' });
@@ -1032,9 +1234,52 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
     }
     const tokens = await issueTokens(row.id);
     applyAuthCookies(res, tokens);
-    res.json({ user: buildUserPayload(row) });
+    res.json(buildAuthResponse(row, tokens));
   } catch {
     return res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+app.post('/api/v1/auth/firebase', authLimiter, async (req, res) => {
+  if (!firebaseBridgeSchemaValid(req.body)) {
+    return res.status(400).json({ error: 'FIREBASE_ID_TOKEN_REQUIRED' });
+  }
+
+  if (!isFirebaseAdminEnabled()) {
+    return res.status(503).json({
+      error: 'FIREBASE_ADMIN_NOT_CONFIGURED',
+      message: 'Configure Firebase Admin credentials on the server to accept Firebase sign-in.',
+    });
+  }
+
+  try {
+    await cleanupExpiredRefreshTokens();
+    const decodedToken = await verifyFirebaseIdToken(String(req.body.idToken).trim());
+    const email = normalizeEmail(decodedToken.email);
+
+    if (!email) {
+      return res.status(400).json({ error: 'FIREBASE_EMAIL_REQUIRED' });
+    }
+
+    const providerId = normalizeFirebaseProvider(
+      decodedToken.firebase?.sign_in_provider,
+      req.body?.requestedProvider
+    );
+    const safeDisplayName = sanitizeDisplayName(
+      req.body?.displayName || decodedToken.name || email.split('@')[0]
+    );
+    const user = await findOrCreateFirebaseUser({
+      email,
+      displayName: safeDisplayName,
+      providerId,
+    });
+    const tokens = await issueTokens(user.id);
+
+    applyAuthCookies(res, tokens);
+    return res.json(buildAuthResponse(user, tokens));
+  } catch (error) {
+    console.error('Firebase auth bridge error:', error.message);
+    return res.status(401).json({ error: 'INVALID_FIREBASE_TOKEN' });
   }
 });
 
@@ -1050,14 +1295,14 @@ app.post('/api/v1/auth/refresh', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'INVALID_REFRESH' });
     }
     applyAuthCookies(res, tokens);
-    return res.json({ user: buildUserPayload(userRow) });
+    return res.json(buildAuthResponse(userRow, tokens));
   } catch {
     clearAuthCookies(res);
     return res.status(401).json({ error: 'INVALID_REFRESH' });
   }
 });
 
-app.get('/api/v1/auth/session', authMiddleware, async (req, res) => {
+async function sendCurrentSession(req, res) {
   try {
     const row = await dbGet(`SELECT id, email, displayName FROM users WHERE id = ?`, [req.userId]);
     if (!row) return res.status(404).json({ error: 'USER_NOT_FOUND' });
@@ -1065,7 +1310,10 @@ app.get('/api/v1/auth/session', authMiddleware, async (req, res) => {
   } catch {
     return res.status(500).json({ error: 'DB_ERROR' });
   }
-});
+}
+
+app.get('/api/v1/auth/session', authMiddleware, sendCurrentSession);
+app.get('/api/v1/auth/me', authMiddleware, sendCurrentSession);
 
 app.post('/api/v1/auth/logout', authLimiter, async (req, res) => {
   const refreshToken = String(req.body?.refreshToken || getCookieValue(req.headers.cookie, REFRESH_COOKIE_NAME) || '').trim();
