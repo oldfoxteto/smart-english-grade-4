@@ -14,10 +14,10 @@ describe('auth storage', () => {
     clearTokens();
   });
 
-  it('does not persist tokens in browser storage when using httpOnly cookies', () => {
-    saveTokens('access-token', 'refresh-token');
+  it('persists tokens for bearer-auth API requests', () => {
+    saveTokens('access-token');
 
-    expect(getAccessToken()).toBeNull();
+    expect(getAccessToken()).toBe('access-token');
     expect(getRefreshToken()).toBeNull();
     expect(isAuthenticated()).toBe(false);
   });

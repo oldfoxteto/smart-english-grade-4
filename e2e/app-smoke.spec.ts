@@ -155,6 +155,74 @@ async function mockApi(page: Page) {
   });
 }
 
+async function mockGuestAuthApi(page: Page) {
+  await page.route(/\/api\/v1\/auth\/session$/, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'UNAUTHENTICATED' }),
+    });
+  });
+
+  await page.route(/\/api\/v1\/auth\/refresh$/, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'UNAUTHENTICATED' }),
+    });
+  });
+
+  await page.route(/\/api\/v1\/auth\/firebase$/, async (route) => {
+    const payload = route.request().postDataJSON() as { idToken?: string };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user: {
+          id: 'u-google',
+          email: 'google.user@example.com',
+          displayName: 'Google Learner',
+          status: 'active',
+          roles: ['user'],
+        },
+        token: `app-access-${payload.idToken || 'missing'}`,
+      }),
+    });
+  });
+
+  await page.route(/\/api\/v1\/progress$/, async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          vocabularyCompleted: [],
+          grammarCompleted: [],
+          storiesCompleted: [],
+          quizScores: [],
+          stars: 0,
+          level: 1,
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, updatedAt: new Date().toISOString() }),
+    });
+  });
+
+  await page.route(/\/api\/v1\/practice\/catalog$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ exercises: [], updatedAt: new Date().toISOString() }),
+    });
+  });
+}
+
 test('AI tutor page sends message via backend proxy', async ({ page }) => {
   await bootstrapAuthenticatedUser(page);
   await mockApi(page);
@@ -184,4 +252,46 @@ test('Testing page renders live assessment summary', async ({ page }) => {
   await page.goto('/testing');
   await expect(page.locator('body')).toContainText('Live assessment center');
   await expect(page.locator('body')).toContainText('اختبار تحديد المستوى');
+});
+
+test('Google sign-in completes app session without looping back to login', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Window & { __E2E_FIREBASE_AUTH__?: unknown }).__E2E_FIREBASE_AUTH__ = {
+      popupUser: {
+        uid: 'google-popup-user',
+        email: 'google.user@example.com',
+        displayName: 'Google Learner',
+        providerId: 'google.com',
+        idToken: 'firebase-google-popup-token',
+      },
+    };
+  });
+  await mockGuestAuthApi(page);
+
+  await page.goto('/login');
+  await page.getByRole('button', { name: /continue with google/i }).click();
+
+  await page.waitForURL('**/onboarding');
+  await expect(page).not.toHaveURL(/\/login$/);
+});
+
+test('Google redirect restore resumes session and leaves login page', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem('beefluent_google_redirect_pending', '1');
+    (window as Window & { __E2E_FIREBASE_AUTH__?: unknown }).__E2E_FIREBASE_AUTH__ = {
+      redirectUser: {
+        uid: 'google-redirect-user',
+        email: 'google.redirect@example.com',
+        displayName: 'Redirect Learner',
+        providerId: 'google.com',
+        idToken: 'firebase-google-redirect-token',
+      },
+    };
+  });
+  await mockGuestAuthApi(page);
+
+  await page.goto('/login');
+
+  await page.waitForURL('**/onboarding');
+  await expect(page).not.toHaveURL(/\/login$/);
 });

@@ -76,6 +76,7 @@ test('blocks untrusted origins on state-changing requests', async () => {
 test('rotates refresh cookies and blocks reuse of the old cookie', async () => {
   const { agent, response } = await registerUser('rotate');
   expect(response.status).toBe(201);
+  expect(response.body.token).toBeDefined();
   expect(response.body.refreshToken).toBeUndefined();
 
   const firstRefreshCookie = findCookie(response.headers['set-cookie'], 'lisan_refresh');
@@ -131,7 +132,7 @@ test('refresh cookie cannot be used as bearer token on protected routes', async 
 test('session endpoint restores user from access cookie without exposing tokens', async () => {
   const { agent, response } = await registerUser('session');
   expect(response.status).toBe(201);
-  expect(response.body.token).toBeUndefined();
+  expect(response.body.token).toBeDefined();
   expect(response.body.refreshToken).toBeUndefined();
 
   const sessionResponse = await agent.get('/api/v1/auth/session');

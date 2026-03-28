@@ -1,6 +1,8 @@
 const USER_KEY = "lisan_current_user";
 const ONBOARDING_KEY = "lisan_onboarding_v1";
 const AUTH_CHANGE_EVENT = "lisan-auth-change";
+const ACCESS_TOKEN_KEY = "lisan_access_token";
+const REFRESH_TOKEN_KEY = "lisan_refresh_token";
 
 export type AuthUser = {
   id: string;
@@ -18,8 +20,26 @@ export type OnboardingProfile = {
   completedAt: string;
 };
 
-export function saveTokens(_token?: string, _refreshToken?: string) {
-  // Tokens are stored in httpOnly cookies on the server.
+function getStorage(remember = true) {
+  return remember ? localStorage : sessionStorage;
+}
+
+export function saveTokens(token?: string, refreshToken?: string, remember = true) {
+  const storage = getStorage(remember);
+  const secondaryStorage = remember ? sessionStorage : localStorage;
+
+  if (token) {
+    storage.setItem(ACCESS_TOKEN_KEY, token);
+  }
+
+  if (refreshToken) {
+    storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  } else {
+    storage.removeItem(REFRESH_TOKEN_KEY);
+    secondaryStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
+
+  emitAuthChange();
 }
 
 function emitAuthChange() {
@@ -49,15 +69,15 @@ export function isAdminUser() {
 }
 
 export function setAccessToken(_token: string) {
-  // Access tokens are stored in httpOnly cookies on the server.
+  saveTokens(_token, undefined);
 }
 
 export function getAccessToken() {
-  return null;
+  return localStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
 export function getRefreshToken() {
-  return null;
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || sessionStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 export function saveOnboardingProfile(profile: OnboardingProfile) {
@@ -79,8 +99,12 @@ export function isOnboardingCompleted() {
 }
 
 export function clearTokens() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(ONBOARDING_KEY);
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
   emitAuthChange();
 }
 

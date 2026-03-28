@@ -1,427 +1,646 @@
-import { useState } from 'react';
 import {
-  Alert,
   Box,
   Button,
-  Paper,
+  CircularProgress,
+  IconButton,
+  InputAdornment,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
-import AlternateEmailRoundedIcon from '@mui/icons-material/AlternateEmailRounded';
-import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded';
-import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
+import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import { useTranslation } from 'react-i18next';
 import { useProgress } from '../core/ProgressContext';
-import { login, register } from '../core/api';
-import { isOnboardingCompleted, saveCurrentUser } from '../core/auth';
+import { login, loginWithFirebase, register, type AuthResponse } from '../core/api';
+import { isOnboardingCompleted, saveCurrentUser, saveTokens } from '../core/auth';
+import {
+  beginTotpEnrollment,
+  consumeGoogleRedirectSignIn,
+  completeTotpSignIn,
+  confirmTotpEnrollment,
+  firebaseAuthEnabled,
+  getFirebaseIdToken,
+  getSignedInFirebaseUser,
+  hasPendingGoogleRedirect,
+  isLanDevelopmentHost,
+  loginWithFirebaseEmail,
+  registerWithFirebaseEmail,
+  sendFirebasePasswordReset,
+  signOutFirebaseSession,
+  signInWithGoogle,
+  type CompletedFirebaseAuth,
+  type PendingMfaSignIn,
+  type TotpEnrollment,
+} from '../core/firebaseAuth';
+import { AuthLoginForm, type SocialProvider } from '../components/auth/AuthLoginForm';
+import { LoginReferenceOverlay } from '../components/auth/LoginReferenceOverlay';
+import { AuthTotpPanel } from '../components/auth/AuthTotpPanel';
+import { authCardSx, authInputSx } from '../components/auth/authStyles';
 
-const MotionBox = motion(Box);
+const firebaseEnabled = firebaseAuthEnabled();
+const lanDevelopmentMode = isLanDevelopmentHost();
+const firebaseTotpEnabled = import.meta.env.VITE_FIREBASE_TOTP_MFA === 'true';
+const FIREBASE_BRIDGE_TIMEOUT_MS = 15000;
 
-const floatingLights = [
-  { left: '8%', delay: 0.1, duration: 5.8 },
-  { left: '18%', delay: 0.8, duration: 6.6 },
-  { left: '34%', delay: 0.3, duration: 5.2 },
-  { left: '52%', delay: 1.1, duration: 6.9 },
-  { left: '71%', delay: 0.5, duration: 5.6 },
-  { left: '86%', delay: 1.5, duration: 6.2 },
-];
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
 
-function LampIllustration() {
-  return (
-    <Box
-      sx={{
-        position: 'relative',
-        width: '100%',
-        minHeight: 340,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-      }}
-    >
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          background:
-            'radial-gradient(circle at center, rgba(133,216,206,0.28), rgba(133,216,206,0.02) 55%, transparent 72%)',
-          filter: 'blur(8px)',
-        }}
-      />
-      <MotionBox
-        animate={{ rotate: [0, -2, 1, 0] }}
-        transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
-        sx={{
-          position: 'relative',
-          width: 190,
-          height: 260,
-        }}
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 14,
-            left: '50%',
-            width: 8,
-            height: 38,
-            borderRadius: 4,
-            background: 'linear-gradient(180deg, #d7e8ea, #9fb4b8)',
-            transform: 'translateX(-50%)',
-          }}
-        />
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 40,
-            left: '50%',
-            width: 132,
-            height: 88,
-            borderRadius: '28px 28px 18px 18px',
-            background: 'linear-gradient(180deg, #a9c392, #7ea167)',
-            transform: 'translateX(-50%)',
-            boxShadow: '0 10px 24px rgba(0,0,0,0.15)',
-          }}
-        >
-          <Box sx={{ position: 'absolute', top: 28, left: 33, width: 16, height: 6, borderBottom: '3px solid #203126', borderRadius: '50%' }} />
-          <Box sx={{ position: 'absolute', top: 28, right: 33, width: 16, height: 6, borderBottom: '3px solid #203126', borderRadius: '50%' }} />
-          <Box sx={{ position: 'absolute', top: 46, left: '50%', width: 18, height: 14, background: '#ff9c7a', borderRadius: '0 0 12px 12px', transform: 'translateX(-50%)' }} />
-          <Box sx={{ position: 'absolute', top: 53, left: '50%', width: 34, height: 10, borderTop: '3px solid #203126', borderRadius: '50%', transform: 'translateX(-50%)' }} />
-        </Box>
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 116,
-            left: '50%',
-            width: 90,
-            height: 120,
-            clipPath: 'polygon(18% 0%, 82% 0%, 100% 100%, 0% 100%)',
-            background: 'linear-gradient(180deg, rgba(255,247,200,0.9), rgba(255,247,200,0.05))',
-            transform: 'translateX(-50%)',
-            filter: 'blur(1px)',
-            opacity: 0.92,
-          }}
-        />
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 120,
-            left: '50%',
-            width: 14,
-            height: 86,
-            borderRadius: 10,
-            background: 'linear-gradient(180deg, #f8fbfc, #c7d3d8)',
-            transform: 'translateX(-50%)',
-          }}
-        />
-        <Box
-          sx={{
-            position: 'absolute',
-            bottom: 16,
-            left: '50%',
-            width: 86,
-            height: 18,
-            borderRadius: 18,
-            background: 'linear-gradient(180deg, #f9fbfc, #d0d8dd)',
-            transform: 'translateX(-50%)',
-            boxShadow: '0 10px 16px rgba(0,0,0,0.12)',
-          }}
-        />
-      </MotionBox>
-    </Box>
-  );
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
-const LoginPage = () => {
+export default function LoginPage() {
   const { setUsername } = useProgress();
-
+  const { i18n } = useTranslation();
+  const overlayEnabled =
+    typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('overlay') === '1';
+  const [role, setRole] = useState<'student' | 'parent'>('parent');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+  const [studentPin, setStudentPin] = useState('');
+  const [mode, setMode] = useState<'register' | 'login'>('login');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [enableTwoFactor, setEnableTwoFactor] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+  const [pendingEnrollment, setPendingEnrollment] = useState<TotpEnrollment | null>(null);
+  const [pendingAuth, setPendingAuth] = useState<CompletedFirebaseAuth | null>(null);
+  const [pendingMfaSignIn, setPendingMfaSignIn] = useState<PendingMfaSignIn | null>(null);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const emailAuthMode: 'firebase' | 'local' = firebaseEnabled ? 'firebase' : 'local';
+  const canUseTotpMfa = firebaseEnabled && firebaseTotpEnabled;
+  const inSecondaryStep = Boolean(pendingEnrollment || pendingMfaSignIn);
+
+  useEffect(() => {
+    document.documentElement.dir = i18n.language === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = i18n.language;
+  }, [i18n.language]);
+
+  useEffect(() => {
+    if (lanDevelopmentMode) {
+      setInfo('Firebase sign-in is disabled on LAN IP addresses. Open the app on localhost or continue with local email/password login.');
+      return;
+    }
+
+    if (!firebaseEnabled) {
+      setInfo('Firebase web settings are incomplete, so the app will use local email/password login only.');
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      setInfo('Firebase sign-in is enabled for localhost development.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseEnabled) {
+      return;
+    }
+
+    let active = true;
+
+    const restoreGoogleRedirect = async () => {
+      try {
+        const redirectPending = hasPendingGoogleRedirect();
+        const authResult = await consumeGoogleRedirectSignIn();
+        const fallbackFirebaseUser = authResult || !redirectPending ? null : getSignedInFirebaseUser();
+
+        if (!active || (!authResult && !fallbackFirebaseUser)) {
+          return;
+        }
+
+        setLoading(true);
+        const resolvedAuthResult: CompletedFirebaseAuth = authResult || {
+          kind: 'complete',
+          user: fallbackFirebaseUser!,
+          providerId: 'google.com',
+          mfaCompleted: false,
+        };
+        await finalizeFirebaseSession(resolvedAuthResult, {
+          fallbackName: resolvedAuthResult.user.displayName || resolvedAuthResult.user.email || 'Student',
+        });
+      } catch (err) {
+        await signOutFirebaseSession().catch(() => undefined);
+        if (!active) {
+          return;
+        }
+
+        const message = err instanceof Error ? err.message : '';
+        if (message && message !== 'Redirecting to Google sign-in...') {
+          setError(message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void restoreGoogleRedirect();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const clearSecondaryFlow = () => {
+    setPendingEnrollment(null);
+    setPendingAuth(null);
+    setPendingMfaSignIn(null);
+    setTotpCode('');
+  };
+
+  const resetMessages = () => {
     setError('');
+    setInfo('');
+  };
+
+  const completeAppSession = (response: AuthResponse, fallbackName?: string) => {
+    saveTokens(response.token, undefined, rememberMe);
+    saveCurrentUser(response.user);
+    setUsername(response.user.displayName || fallbackName || 'Student');
+    window.location.replace(isOnboardingCompleted() ? '/home' : '/onboarding');
+  };
+
+  const finalizeFirebaseSession = async (
+    authResult: CompletedFirebaseAuth,
+    options?: { mfaCompleted?: boolean; fallbackName?: string }
+  ) => {
+    const idToken = await withTimeout(
+      getFirebaseIdToken(authResult.user),
+      FIREBASE_BRIDGE_TIMEOUT_MS,
+      'Timed out while reading your Firebase session. Please try signing in again.'
+    );
+    const response = await withTimeout(
+      loginWithFirebase({
+        idToken,
+        displayName: authResult.user.displayName || displayName.trim(),
+        country: 'SA',
+        requestedProvider: authResult.providerId,
+        mfaCompleted: options?.mfaCompleted ?? authResult.mfaCompleted,
+      }),
+      FIREBASE_BRIDGE_TIMEOUT_MS,
+      'Timed out while creating your app session. Please try again.'
+    );
+    completeAppSession(
+      response,
+      options?.fallbackName || authResult.user.displayName || displayName.trim()
+    );
+  };
+
+  const maybeStartTwoFactorEnrollment = async (
+    authResult: CompletedFirebaseAuth,
+    fallbackName?: string
+  ) => {
+    if (!canUseTotpMfa || !enableTwoFactor || emailAuthMode !== 'firebase' || authResult.providerId !== 'password') {
+      await finalizeFirebaseSession(authResult, { fallbackName });
+      return;
+    }
+
+    const enrollment = await beginTotpEnrollment(authResult.user);
+    setPendingAuth(authResult);
+    setPendingEnrollment(enrollment);
+    setPendingMfaSignIn(null);
+    setTotpCode('');
+    setInfo('Scan the QR code, then enter your authenticator code to finish 2FA setup.');
+  };
+
+  const handleLegacyAction = async (targetMode: 'login' | 'register') => {
+    const payload = {
+      email: email.trim().toLowerCase(),
+      password,
+      displayName: displayName.trim(),
+      country: 'SA',
+    };
+
+    const response = targetMode === 'register' ? await register(payload) : await login(payload);
+    completeAppSession(response, displayName.trim());
+  };
+
+  const tryLegacyLoginFallback = async () => {
+    try {
+      await handleLegacyAction('login');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    resetMessages();
+    clearSecondaryFlow();
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError('Please enter your email address first.');
+      return;
+    }
+
+    if (emailAuthMode !== 'firebase') {
+      setInfo('Password reset is currently available through Firebase accounts only.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      const payload = {
-        email: normalizedEmail,
-        password,
-        displayName: displayName.trim(),
-        country: 'SA',
-      };
-
-      const response = mode === 'register' ? await register(payload) : await login(payload);
-      saveCurrentUser(response.user);
-      setUsername(response.user.displayName || displayName || 'Student');
-      const target = isOnboardingCompleted() ? '/home' : '/onboarding';
-      window.location.replace(target);
+      await sendFirebasePasswordReset(normalizedEmail);
+      setInfo('We sent a password reset link to your email address. Check inbox and spam.');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not complete authentication.';
-      setError(message);
+      setError(err instanceof Error ? err.message : 'Unable to send a password reset email.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleEmailAction = async (targetMode: 'login' | 'register') => {
+    setMode(targetMode);
+    resetMessages();
+    clearSecondaryFlow();
+    setLoading(true);
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!normalizedEmail || !password) {
+        throw new Error('Please enter your email and password first.');
+      }
+
+      if (targetMode === 'register' && !displayName.trim()) {
+        throw new Error('Please enter your name to create an account.');
+      }
+
+      if (emailAuthMode === 'local') {
+        await handleLegacyAction(targetMode);
+        return;
+      }
+
+      if (targetMode === 'register') {
+        await registerWithFirebaseEmail(
+          normalizedEmail,
+          password,
+          displayName.trim()
+        );
+        await signOutFirebaseSession();
+        setMode('login');
+        clearSecondaryFlow();
+        setInfo('Your account was created successfully. A verification email was also sent to your inbox.');
+        return;
+      }
+
+      let signedIn;
+
+      try {
+        signedIn = await loginWithFirebaseEmail(normalizedEmail, password);
+      } catch (firebaseError) {
+        const usedLegacyFallback = await tryLegacyLoginFallback();
+        if (usedLegacyFallback) {
+          return;
+        }
+
+        throw firebaseError;
+      }
+
+      if (signedIn.kind === 'mfa-required') {
+        setPendingMfaSignIn(signedIn);
+        setInfo(`Enter the code from ${signedIn.factorLabel} to continue.`);
+        return;
+      }
+
+      if (canUseTotpMfa && enableTwoFactor && signedIn.providerId === 'password' && !signedIn.mfaCompleted) {
+        await maybeStartTwoFactorEnrollment(signedIn);
+        return;
+      }
+
+      await finalizeFirebaseSession(signedIn, { fallbackName: displayName.trim() });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to complete authentication.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSocialSignIn = async (_provider: SocialProvider) => {
+    resetMessages();
+    clearSecondaryFlow();
+    setLoading(true);
+
+    try {
+      const authResult = await signInWithGoogle();
+
+      await finalizeFirebaseSession(authResult, {
+        fallbackName: authResult.user.displayName || authResult.user.email || 'Student',
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Social sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTotpConfirm = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      if (pendingMfaSignIn) {
+        const signedIn = await completeTotpSignIn(
+          pendingMfaSignIn.resolver,
+          totpCode.trim()
+        );
+        clearSecondaryFlow();
+        await finalizeFirebaseSession(signedIn, { mfaCompleted: true });
+      } else if (pendingEnrollment && pendingAuth) {
+        const enrolled = await confirmTotpEnrollment(
+          pendingAuth.user,
+          pendingEnrollment,
+          totpCode.trim()
+        );
+        clearSecondaryFlow();
+        await finalizeFirebaseSession(enrolled, {
+          mfaCompleted: true,
+          fallbackName: pendingAuth.user.displayName || displayName.trim(),
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to complete two-factor verification.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showParentLogin = () => {
+    setRole('parent');
+    resetMessages();
+    clearSecondaryFlow();
+  };
+
+  const showStudentAccess = () => {
+    setRole('student');
+    resetMessages();
+    clearSecondaryFlow();
+  };
+
   return (
     <Box
       sx={{
-        position: 'relative',
         minHeight: '100vh',
-        overflow: 'hidden',
-        background: 'linear-gradient(160deg, #071722 0%, #0B2433 48%, #12394B 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        px: 2,
-        py: { xs: 4, md: 6 },
+        direction: i18n.language === 'ar' ? 'rtl' : 'ltr',
+        position: 'relative',
+        overflow: 'hidden',
+        px: { xs: 2, md: 3 },
+        py: { xs: 3, md: 5 },
+        backgroundImage:
+          'url(https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?q=80&w=2070&auto=format&fit=crop)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
       }}
     >
-      {floatingLights.map((light) => (
-        <Box
-          key={light.left}
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: light.left,
-            width: 1,
-            height: { xs: 120, md: 180 },
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.02))',
-            opacity: 0.42,
-          }}
-        >
-          <MotionBox
-            animate={{ y: [0, 10, 0], opacity: [0.9, 1, 0.9] }}
-            transition={{ duration: light.duration, delay: light.delay, repeat: Infinity, ease: 'easeInOut' }}
-            sx={{
-              position: 'absolute',
-              left: '50%',
-              bottom: -6,
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              transform: 'translateX(-50%)',
-              background: '#fff1a7',
-              boxShadow: '0 0 18px rgba(255,241,167,0.9)',
-            }}
-          />
-        </Box>
-      ))}
+      <LoginReferenceOverlay enabled={overlayEnabled} />
 
-      <MotionBox
-        animate={{ scale: [1, 1.08, 1], opacity: [0.22, 0.32, 0.22] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+      <Box
         sx={{
           position: 'absolute',
-          width: 420,
-          height: 420,
-          top: -120,
-          right: -120,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(133,216,206,0.34), transparent 70%)',
-          filter: 'blur(20px)',
+          inset: 0,
+          bgcolor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
         }}
       />
 
-      <Paper
-        elevation={0}
+      <Box
         sx={{
           position: 'relative',
+          zIndex: 1,
           width: '100%',
-          maxWidth: 1080,
-          overflow: 'hidden',
-          borderRadius: { xs: 4, md: 6 },
-          background: 'rgba(255,255,255,0.97)',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.34)',
+          maxWidth: 460,
+          textAlign: 'center',
         }}
       >
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1.08fr 0.92fr' },
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              background: 'linear-gradient(180deg, #f4fbfc 0%, #e8f4f6 100%)',
-              px: { xs: 2.5, md: 4.5 },
-              py: { xs: 3, md: 4 },
-              borderBottom: { xs: '1px solid rgba(12,127,160,0.08)', md: 'none' },
-            }}
-          >
-            <Box>
-              <Typography
-                sx={{
-                  fontSize: { xs: '2rem', md: '3.3rem' },
-                  fontWeight: 900,
-                  lineHeight: 1,
-                  letterSpacing: '-0.04em',
-                  color: '#0B2433',
-                  mb: 1.2,
-                }}
-              >
-                Bright Login
-              </Typography>
-              <Typography
-                sx={{
-                  color: '#46616C',
-                  fontSize: { xs: '0.95rem', md: '1.05rem' },
-                  maxWidth: 420,
-                }}
-              >
-                A cleaner sign-in experience for LISAN with playful motion and a strong mobile-first presentation.
-              </Typography>
-            </Box>
-
-            <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-              <LampIllustration />
-            </Box>
-
-            <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', md: 'flex' }, flexWrap: 'wrap' }}>
-              <Box sx={{ px: 1.5, py: 0.8, borderRadius: 999, bgcolor: 'rgba(11,75,136,0.08)', color: '#0B4B88', fontWeight: 700, fontSize: '0.85rem' }}>Smart onboarding</Box>
-              <Box sx={{ px: 1.5, py: 0.8, borderRadius: 999, bgcolor: 'rgba(46,125,50,0.08)', color: '#2E7D32', fontWeight: 700, fontSize: '0.85rem' }}>Arabic friendly</Box>
-              <Box sx={{ px: 1.5, py: 0.8, borderRadius: 999, bgcolor: 'rgba(12,127,160,0.08)', color: '#0C7FA0', fontWeight: 700, fontSize: '0.85rem' }}>Fast access</Box>
-            </Stack>
-          </Box>
-
+        <Box sx={{ mb: 3 }}>
           <Box
             sx={{
               position: 'relative',
-              px: { xs: 2.5, sm: 4, md: 5 },
-              py: { xs: 3, md: 5 },
-              background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+              width: 72,
+              height: 72,
+              mx: 'auto',
+              mb: 2.2,
+              borderRadius: '18px',
+              bgcolor: 'rgba(255,255,255,0.1)',
+              display: 'grid',
+              placeItems: 'center',
+              border: '1px solid rgba(255,255,255,0.2)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
             }}
           >
-            <MotionBox
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45 }}
-            >
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 900,
-                  color: '#0B2433',
-                  mb: 0.75,
-                  fontSize: { xs: '1.7rem', md: '2.15rem' },
-                }}
-              >
-                {mode === 'register' ? 'Create account' : 'Welcome back'}
-              </Typography>
-              <Typography sx={{ color: '#5F7380', mb: 3 }}>
-                {mode === 'register'
-                  ? 'Start your learning path in a few seconds.'
-                  : 'Sign in to continue your lessons and AI practice.'}
-              </Typography>
+            <Typography sx={{ fontSize: '2.2rem', lineHeight: 1 }}>🐝</Typography>
+          </Box>
 
-              <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
-                <Button
-                  type="button"
-                  variant={mode === 'login' ? 'contained' : 'outlined'}
-                  onClick={() => setMode('login')}
-                  sx={{ borderRadius: 999, px: 2.2, fontWeight: 800 }}
-                >
-                  Sign in
-                </Button>
-                <Button
-                  type="button"
-                  variant={mode === 'register' ? 'contained' : 'outlined'}
-                  onClick={() => setMode('register')}
-                  sx={{ borderRadius: 999, px: 2.2, fontWeight: 800 }}
-                >
-                  Sign up
-                </Button>
-              </Stack>
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: { xs: '2.2rem', sm: '2.5rem' },
+              lineHeight: 1,
+              letterSpacing: '-0.04em',
+              textShadow: '0 5px 20px rgba(0,0,0,0.28)',
+            }}
+          >
+            <Box component="span" sx={{ color: '#f2bc21' }}>
+              Bee
+            </Box>
+            <Box component="span" sx={{ color: '#ffffff' }}>
+              Fluent
+            </Box>
+          </Typography>
+          <Typography
+            sx={{
+              mt: 0.5,
+              color: '#cbd5e1',
+              fontWeight: 500,
+              fontSize: '0.95rem',
+              textShadow: '0 4px 18px rgba(0,0,0,0.32)',
+            }}
+          >
+            English Learning Academy
+          </Typography>
+        </Box>
 
-              {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Box sx={{ ...authCardSx, px: { xs: 2.2, sm: 3 }, py: { xs: 2.8, sm: 3.2 } }}>
+          {role === 'student' ? (
+            <Stack spacing={2.4} dir="ltr">
+              <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <IconButton onClick={showParentLogin} sx={{ color: '#ffffff' }}>
+                  <ArrowBackRoundedIcon sx={{ transform: i18n.language === 'ar' ? 'rotate(180deg)' : 'none' }} />
+                </IconButton>
+              </Box>
 
-              <Box component="form" onSubmit={handleSubmit}>
-                {mode === 'register' && (
-                  <TextField
-                    fullWidth
-                    label="Display name"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    sx={{ mb: 2 }}
-                    required
-                    InputProps={{
-                      startAdornment: <PersonOutlineRoundedIcon sx={{ mr: 1, color: '#7A8E99' }} />,
-                    }}
-                  />
-                )}
+              <Box sx={{ textAlign: 'center', mt: -1 }}>
+                <SchoolRoundedIcon sx={{ fontSize: 42, color: '#ffffff', mb: 0.5 }} />
+                <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: '1.6rem' }}>
+                  Student Access
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.82)', fontSize: '0.95rem', mt: 0.5 }}>
+                  Continue with your nickname and classroom PIN.
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography sx={{ mb: 0.8, fontSize: '0.95rem', fontWeight: 800, color: '#ffffff', textAlign: 'left' }}>
+                  Nickname
+                </Typography>
                 <TextField
                   fullWidth
-                  type="email"
-                  label="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  sx={{ mb: 2 }}
-                  required
+                  placeholder="e.g. Noor_4A"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  sx={authInputSx}
                   InputProps={{
-                    startAdornment: <AlternateEmailRoundedIcon sx={{ mr: 1, color: '#7A8E99' }} />,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PersonRoundedIcon sx={{ color: 'rgba(255,255,255,0.82)' }} />
+                      </InputAdornment>
+                    ),
                   }}
                 />
+              </Box>
+
+              <Box>
+                <Typography sx={{ mb: 0.8, fontSize: '0.95rem', fontWeight: 800, color: '#ffffff', textAlign: 'left' }}>
+                  PIN
+                </Typography>
                 <TextField
                   fullWidth
                   type="password"
-                  label="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  sx={{ mb: 1 }}
-                  helperText="Use at least 8 characters."
-                  required
+                  placeholder="Enter your classroom PIN"
+                  value={studentPin}
+                  onChange={(event) => setStudentPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                  sx={authInputSx}
                   InputProps={{
-                    startAdornment: <LockOpenRoundedIcon sx={{ mr: 1, color: '#7A8E99' }} />,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LockRoundedIcon sx={{ color: 'rgba(255,255,255,0.82)' }} />
+                      </InputAdornment>
+                    ),
                   }}
                 />
-
-                <Button
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  size="large"
-                  disabled={loading}
-                  sx={{
-                    mt: 2,
-                    py: 1.5,
-                    borderRadius: 3,
-                    fontWeight: 900,
-                    fontSize: '1rem',
-                    background: 'linear-gradient(135deg, #2E7D32 0%, #0C7FA0 100%)',
-                    boxShadow: '0 18px 30px rgba(12,127,160,0.22)',
-                  }}
-                >
-                  {loading ? 'Processing...' : mode === 'register' ? 'Create account' : 'Sign in'}
-                </Button>
-
-                <Typography
-                  sx={{
-                    mt: 2.5,
-                    textAlign: 'center',
-                    color: '#647986',
-                    fontSize: '0.92rem',
-                  }}
-                >
-                  {mode === 'register'
-                    ? 'Already have an account? Switch to sign in.'
-                    : 'Need a new account? Switch to sign up.'}
-                </Typography>
               </Box>
-            </MotionBox>
-          </Box>
+
+              <Button
+                fullWidth
+                variant="contained"
+                disabled={loading || !displayName || studentPin.length < 1}
+                onClick={() => {
+                  setLoading(true);
+                  setTimeout(() => {
+                    saveCurrentUser({
+                      id: 'student',
+                      email: 'student@beefluent.com',
+                      displayName,
+                      roles: ['student'],
+                    });
+                    saveTokens('dev-token', 'dev-refresh', true);
+                    setUsername(displayName);
+                    window.location.replace('/home');
+                  }, 1200);
+                }}
+                sx={{
+                  minHeight: 54,
+                  borderRadius: '999px',
+                  fontSize: '1rem',
+                  fontWeight: 900,
+                  background: 'linear-gradient(180deg, #4d90ff 0%, #2f6dff 54%, #1f54d7 100%)',
+                  boxShadow: '0 12px 24px rgba(19,56,166,0.38), 0 2px 0 rgba(255,255,255,0.3) inset',
+                }}
+              >
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'Start Learning'}
+              </Button>
+            </Stack>
+          ) : inSecondaryStep ? (
+            <AuthTotpPanel
+              loading={loading}
+              totpCode={totpCode}
+              pendingEnrollment={pendingEnrollment}
+              onCodeChange={(value) => setTotpCode(value.replace(/\D/g, '').slice(0, 6))}
+              onConfirm={() => void handleTotpConfirm()}
+              onBack={clearSecondaryFlow}
+            />
+          ) : (
+            <AuthLoginForm
+              mode={mode}
+              googleEnabled={firebaseEnabled}
+              showPassword={showPassword}
+              rememberMe={rememberMe}
+              displayName={displayName}
+              email={email}
+              password={password}
+              loading={loading}
+              enableTwoFactor={enableTwoFactor}
+              showTwoFactor={canUseTotpMfa}
+              error={error}
+              info={info}
+              onDisplayNameChange={setDisplayName}
+              onEmailChange={setEmail}
+              onPasswordChange={setPassword}
+              onRememberMeChange={setRememberMe}
+              onShowPasswordToggle={() => setShowPassword(!showPassword)}
+              onEnableTwoFactorChange={setEnableTwoFactor}
+              onForgotPassword={() => void handleForgotPassword()}
+              onEmailAction={handleEmailAction}
+              onSocialSignIn={handleSocialSignIn}
+            />
+          )}
         </Box>
-      </Paper>
+
+        {role === 'parent' ? (
+          <Button
+            onClick={showStudentAccess}
+            sx={{
+              mt: 1.8,
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.98rem',
+              textTransform: 'none',
+              textShadow: '0 4px 18px rgba(0,0,0,0.32)',
+            }}
+          >
+            Student access
+          </Button>
+        ) : (
+          <Button
+            onClick={showParentLogin}
+            sx={{
+              mt: 1.8,
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.98rem',
+              textTransform: 'none',
+              textShadow: '0 4px 18px rgba(0,0,0,0.32)',
+            }}
+          >
+            Back to parent login
+          </Button>
+        )}
+      </Box>
     </Box>
   );
-};
-
-export default LoginPage;
+}

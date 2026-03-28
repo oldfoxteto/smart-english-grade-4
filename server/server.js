@@ -23,6 +23,10 @@ const DEFAULT_CLIENT_URLS = [
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
+  'https://beefluent-7ae36.firebaseapp.com',
+  'https://beefluent-7ae36.web.app',
+  'https://beefluent-2ce61.web.app',
+  'https://beefluent.web.app',
   'https://ai-english-master.web.app',
   'https://ai-english-master.firebaseapp.com',
   'https://smart-english-grade-4.vercel.app',
@@ -38,7 +42,6 @@ const CLIENT_URLS = Array.from(new Set([
   ...DEFAULT_CLIENT_URLS,
   ...configuredClientUrls,
 ]));
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data.db');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -54,7 +57,7 @@ const parseJsonEnv = (value, fallback = null) => {
   }
 };
 const firebaseServiceAccount = parseJsonEnv(process.env.FIREBASE_SERVICE_ACCOUNT_JSON, null);
-const FIREBASE_DEFAULT_PROJECT_ID = 'ai-english-master';
+const FIREBASE_DEFAULT_PROJECT_ID = 'beefluent';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || firebaseServiceAccount?.project_id || FIREBASE_DEFAULT_PROJECT_ID;
 const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL || firebaseServiceAccount?.client_email || '';
 const FIREBASE_PRIVATE_KEY = (
@@ -62,6 +65,34 @@ const FIREBASE_PRIVATE_KEY = (
   || firebaseServiceAccount?.private_key
   || ''
 ).replace(/\\n/g, '\n');
+const resolveJwtSecret = () => {
+  const configuredSecret = process.env.JWT_SECRET || '';
+  if (configuredSecret && configuredSecret !== 'dev-secret' && configuredSecret.length >= 32) {
+    return { secret: configuredSecret, source: 'env' };
+  }
+
+  if (!IS_PRODUCTION) {
+    return { secret: configuredSecret || 'dev-secret', source: 'development-default' };
+  }
+
+  const derivationInputs = [
+    GOOGLE_AI_STUDIO_API_KEY,
+    OPENAI_API_KEY,
+    FIREBASE_PRIVATE_KEY,
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',
+  ].filter(Boolean);
+
+  if (derivationInputs.length > 0) {
+    const derivedSecret = crypto
+      .createHash('sha256')
+      .update(derivationInputs.join('::'))
+      .update(`::${process.env.RENDER_SERVICE_ID || process.env.RENDER || 'smart-english-api'}`)
+      .digest('hex');
+    return { secret: derivedSecret, source: 'derived-from-secret-env' };
+  }
+
+  return { secret: crypto.randomBytes(48).toString('hex'), source: 'ephemeral-random' };
+};
 const FIREBASE_PUBLIC_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const MAX_FRAMES_PER_MIN = Number(process.env.MAX_FRAMES_PER_MIN || 20);
 const MAX_VOICE_FRAME_BYTES = Number(process.env.MAX_VOICE_FRAME_BYTES || 512 * 1024);
@@ -79,12 +110,15 @@ let firebasePublicKeysCache = {
   keys: null,
 };
 
-if (JWT_SECRET === 'dev-secret' || JWT_SECRET.length < 32) {
+const { secret: JWT_SECRET, source: JWT_SECRET_SOURCE } = resolveJwtSecret();
+
+if (JWT_SECRET_SOURCE !== 'env') {
   const message = 'JWT_SECRET must be at least 32 characters and must not use the default development secret.';
   if (IS_PRODUCTION) {
-    throw new Error(message);
+    console.warn(`SECURITY WARNING: ${message} Falling back to ${JWT_SECRET_SOURCE}. Set JWT_SECRET in Render for stable auth tokens across restarts.`);
+  } else {
+    console.warn(`SECURITY WARNING: ${message}`);
   }
-  console.warn(`SECURITY WARNING: ${message}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +431,6 @@ function buildAuthResponse(userRow, tokens) {
   return {
     user: buildUserPayload(userRow),
     token: tokens.token,
-    refreshToken: tokens.refreshToken,
   };
 }
 
@@ -615,6 +648,31 @@ function parseTutorModelOutput(rawText) {
   return { reply, correction };
 }
 
+function parseTranslationModelOutput(rawText, sourceText) {
+  const json = extractJsonObject(rawText);
+  if (json) {
+    return {
+      translation: String(json.translation || sourceText).trim(),
+      explanation: String(
+        json.explanation || 'Translation support is temporarily limited. Please try again shortly.'
+      ).trim(),
+    };
+  }
+
+  const text = String(rawText || '').trim();
+  if (!text) {
+    return {
+      translation: sourceText,
+      explanation: 'Translation support is temporarily limited. Please try again shortly.',
+    };
+  }
+
+  return {
+    translation: text,
+    explanation: 'Translation generated without structured grammar notes.',
+  };
+}
+
 async function generateTutorText({ system, textPayload, userText }) {
   if (GOOGLE_AI_STUDIO_API_KEY) {
     const raw = await callGoogleAiStudio({
@@ -711,6 +769,42 @@ questions must be an array of objects with: question, options, answer.`,
   });
 
   return parseJSON(out.output_text || '{}', { text: out.output_text || '' });
+}
+
+async function translateTextWithAi(sourceText) {
+  if (GOOGLE_AI_STUDIO_API_KEY) {
+    const raw = await callGoogleAiStudio({
+      prompt: `Translate the following English text into Arabic and explain the main grammar point briefly in Arabic.
+Return compact JSON only with fields: translation, explanation.
+
+English text:
+${sourceText}`,
+      temperature: 0.2,
+      maxOutputTokens: 400,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          translation: { type: 'STRING' },
+          explanation: { type: 'STRING' },
+        },
+        required: ['translation', 'explanation'],
+      },
+    });
+
+    return parseTranslationModelOutput(raw, sourceText);
+  }
+
+  if (!openai) {
+    return null;
+  }
+
+  const response = await openai.responses.create({
+    model: 'gpt-4o-mini',
+    input: `Translate this English text into Arabic and explain the main grammar point briefly in Arabic. Return compact JSON with fields translation and explanation.\n\nText: ${sourceText}`,
+  });
+
+  return parseTranslationModelOutput(response.output_text || '', sourceText);
 }
 const policyVersion = '2026-03-child-safe-v1';
 const safetyPolicy = {
@@ -1769,6 +1863,33 @@ app.post('/api/v1/content/generate', authMiddleware, async (req, res) => {
   }
 });
 
+app.post('/api/v1/ai/translate', authMiddleware, async (req, res) => {
+  const text = String(req.body?.text || '').trim().slice(0, 1000);
+  if (!text) {
+    return res.status(400).json({ error: 'TEXT_REQUIRED' });
+  }
+
+  try {
+    const translated = await translateTextWithAi(text);
+    if (!translated) {
+      return res.json({
+        translation: text,
+        explanation: 'Secure translation support is temporarily unavailable. Please try again shortly.',
+        degraded: true,
+      });
+    }
+
+    return res.json({ ...translated, degraded: false });
+  } catch (error) {
+    console.warn('ai/translate fallback', error?.message || error);
+    return res.json({
+      translation: text,
+      explanation: 'Secure translation support is temporarily unavailable. Please try again shortly.',
+      degraded: true,
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Placement + Learning path routes
 // ---------------------------------------------------------------------------
@@ -2784,7 +2905,17 @@ app.post('/api/v1/srs/review', authMiddleware, (req, res) => {
 // Health
 // ---------------------------------------------------------------------------
 app.get('/api/v1/health', (_req, res) => {
-  res.json({ status: 'healthy', ts: nowIso(), version: 'v1', ai: aiRuntimeStatus(), voice: voiceRuntimeStatus() });
+  res.json({
+    status: 'healthy',
+    ts: nowIso(),
+    version: 'v1',
+    ai: aiRuntimeStatus(),
+    voice: voiceRuntimeStatus(),
+    auth: {
+      jwtSecretSource: JWT_SECRET_SOURCE,
+      stableAcrossRestarts: JWT_SECRET_SOURCE === 'env' || JWT_SECRET_SOURCE === 'derived-from-secret-env',
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------

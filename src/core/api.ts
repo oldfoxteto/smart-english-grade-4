@@ -17,6 +17,16 @@ export interface AuthResponse {
     status: string;
     roles?: string[];
   };
+  token: string;
+  refreshToken?: string;
+}
+
+export interface FirebaseBridgePayload {
+  idToken: string;
+  displayName?: string;
+  country?: string;
+  requestedProvider?: string;
+  mfaCompleted?: boolean;
 }
 
 export interface PlacementOption {
@@ -271,6 +281,12 @@ export interface ApiHealthResponse {
   };
 }
 
+export interface AiTranslationResponse {
+  translation: string;
+  explanation: string;
+  degraded?: boolean;
+}
+
 export interface UserSettingsPayload {
   profile: {
     name: string;
@@ -462,10 +478,17 @@ export interface RemoteSrsItem {
   history: boolean[];
 }
 
-const API_HOSTNAME =
-  typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || `http://${API_HOSTNAME}:4000/api/v1`;
+const PRODUCTION_API_FALLBACK = 'https://smart-english-api.onrender.com/api/v1';
+
+function resolveApiBaseUrl() {
+  if (import.meta.env.DEV) {
+    return '/api/v1';
+  }
+
+  return import.meta.env.VITE_API_BASE_URL || PRODUCTION_API_FALLBACK;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
@@ -509,13 +532,12 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 
   refreshInFlight = (async () => {
-    // Legacy hooks kept as no-ops after moving tokens into httpOnly cookies.
     const legacyRefreshToken = getRefreshToken();
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: buildHeaders(),
       credentials: 'include',
-      body: legacyRefreshToken ? JSON.stringify({ refreshToken: legacyRefreshToken }) : undefined,
+      body: JSON.stringify(legacyRefreshToken ? { refreshToken: legacyRefreshToken } : {}),
     });
 
     if (!response.ok) {
@@ -523,10 +545,9 @@ async function refreshAccessToken(): Promise<string | null> {
       return null;
     }
 
-    const payload = (await response.json()) as AuthResponse;
-    saveTokens();
-    saveCurrentUser(payload.user);
-    return 'cookie-session-restored';
+    const payload = (await response.json()) as Pick<AuthResponse, 'token'>;
+    saveTokens(payload.token);
+    return payload.token;
   })();
 
   try {
@@ -599,19 +620,65 @@ export async function login(payload: AuthPayload): Promise<AuthResponse> {
   }, { auth: false, retryOn401: false });
 }
 
+export async function loginWithFirebase(payload: FirebaseBridgePayload): Promise<AuthResponse> {
+  return apiRequest<AuthResponse>('/auth/firebase', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, { auth: false, retryOn401: false });
+}
+
 export async function logout() {
+  const refreshToken = getRefreshToken();
+  const payload = refreshToken ? { refreshToken } : {};
   await apiRequest<void>('/auth/logout', {
     method: 'POST',
+    body: JSON.stringify(payload),
   }, { auth: false, retryOn401: false });
+
+  clearTokens();
+}
+
+async function fetchSessionUser(retryOn401: boolean) {
+  try {
+    return await apiRequest<{ user: AuthResponse['user'] }>('/auth/session', {
+      method: 'GET',
+    }, { auth: true, retryOn401 });
+  } catch (error) {
+    const apiError = error as ApiError;
+    if (apiError?.status !== 404) {
+      throw error;
+    }
+
+    return apiRequest<{ user: AuthResponse['user'] }>('/auth/me', {
+      method: 'GET',
+    }, { auth: true, retryOn401 });
+  }
 }
 
 export async function restoreSession(): Promise<AuthResponse | null> {
   try {
-    const session = await apiRequest<AuthResponse>('/auth/session', {
-      method: 'GET',
-    }, { auth: false, retryOn401: false });
+    const token = getAccessToken();
+    if (!token) {
+      const refreshed = await refreshAccessToken();
+      if (!refreshed) {
+        clearTokens();
+        return null;
+      }
+
+      const session = await fetchSessionUser(false);
+      saveCurrentUser(session.user);
+      return {
+        user: session.user,
+        token: refreshed,
+      };
+    }
+
+    const session = await fetchSessionUser(true);
     saveCurrentUser(session.user);
-    return session;
+    return {
+      user: session.user,
+      token,
+    };
   } catch {
     try {
       const refreshed = await refreshAccessToken();
@@ -619,11 +686,12 @@ export async function restoreSession(): Promise<AuthResponse | null> {
         clearTokens();
         return null;
       }
-      const session = await apiRequest<AuthResponse>('/auth/session', {
-        method: 'GET',
-      }, { auth: false, retryOn401: false });
+      const session = await fetchSessionUser(false);
       saveCurrentUser(session.user);
-      return session;
+      return {
+        user: session.user,
+        token: refreshed,
+      };
     } catch {
       clearTokens();
       return null;
@@ -738,6 +806,13 @@ export async function askAiTutor(payload: {
     correction: resp.correction,
     safety: resp.safety,
   }));
+}
+
+export async function translateAiText(text: string) {
+  return apiRequest<AiTranslationResponse>('/ai/translate', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
 }
 
 export async function getVisionConsent() {
